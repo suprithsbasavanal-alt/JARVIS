@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
-from pydantic import BaseModel, Field
+from core.compat import BaseModel, Field
 
 
 class EnvironmentType(str, Enum):

@@ -6,7 +6,7 @@ Validated using Pydantic v2 with strict typing and default-safe constraints.
 from enum import Enum
 from pathlib import Path
 from typing import Literal
-from pydantic import BaseModel, Field
+from core.compat import BaseModel, Field
 
 
 class PermissionLevel(str, Enum):

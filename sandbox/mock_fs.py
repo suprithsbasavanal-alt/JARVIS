@@ -14,8 +14,14 @@ class MockFilesystem:
 
     def _resolve_safe_path(self, relative_or_virtual_path: str) -> Path:
         """Resolve path and verify it does not escape the sandbox root."""
+        # Reject explicit traversal strings early
+        if ".." in relative_or_virtual_path:
+            raise SandboxViolationError(
+                f"Path traversal rejected: '{relative_or_virtual_path}' contains '..'"
+            )
+
         # Strip mock file:// protocol if present
-        clean_path = relative_or_virtual_path.removeprefix("file://").removeprefix("/")
+        clean_path = relative_or_virtual_path.removeprefix("file://").lstrip("/")
         target_path = (self.sandbox_root / clean_path).resolve()
 
         # Enforce boundary check

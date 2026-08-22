@@ -1,6 +1,6 @@
 """Task Reasoning and Epistemic Disagreement Analyzer."""
 
-from pydantic import BaseModel, Field
+from core.compat import BaseModel, Field
 
 
 class DisagreementAssessment(BaseModel):

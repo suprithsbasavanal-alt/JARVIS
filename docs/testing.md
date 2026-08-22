@@ -55,14 +55,11 @@ graph TB
 ## 3. Test Execution Commands
 
 ```bash
-# Run all safe Phase 0 test suites
-pytest -v
+# Run all safe Phase 1 test suites (Pure Python 3.12 standard library runner)
+python3.12 -m unittest discover -s tests -v
 
-# Run only security and injection defense tests
-pytest tests/security/ -v
-
-# Run with code coverage report
-pytest --cov=core --cov=security --cov=model_routing --cov=memory --cov=conversation --cov=agents --cov=tools --cov=sandbox
+# Run specifically the comprehensive Phase 1 test suite
+python3.12 -m unittest tests/test_phase1_all.py -v
 ```
 
 ---

@@ -5,16 +5,21 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Any
-from pydantic import BaseModel, Field
+from uuid import UUID, uuid4
+from core.compat import BaseModel, Field
 
 
 class AuditEntry(BaseModel):
-    """Immutable audit record."""
+    """Immutable audit record with cryptographic hash chaining."""
     sequence_id: int
+    entry_id: UUID = Field(default_factory=uuid4)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    session_id: str
+    correlation_id: str
     actor_id: str
+    event_type: str
     action_type: str
-    permission_level: str
+    risk_level: str
     target_resource: str
     parameters: dict[str, Any]
     decision: str
@@ -23,13 +28,17 @@ class AuditEntry(BaseModel):
     entry_hash: str = ""
 
     def calculate_hash(self) -> str:
-        """Compute SHA-256 hash of this entry chained with the previous entry hash."""
+        """Compute SHA-256 hash of this entry chained with previous entry hash."""
         payload = {
             "seq": self.sequence_id,
+            "id": str(self.entry_id),
             "ts": self.timestamp.isoformat(),
+            "session": self.session_id,
+            "correlation": self.correlation_id,
             "actor": self.actor_id,
+            "event_type": self.event_type,
             "action": self.action_type,
-            "level": self.permission_level,
+            "risk": self.risk_level,
             "target": self.target_resource,
             "params": self.parameters,
             "decision": self.decision,
@@ -54,19 +63,25 @@ class AuditLogger:
         self,
         actor_id: str,
         action_type: str,
-        permission_level: str,
         target_resource: str,
         parameters: dict[str, Any],
         decision: str,
+        session_id: str = "default_session",
+        correlation_id: str = "default_correlation",
+        event_type: str = "AGENT_EVENT",
+        risk_level: str = "NORMAL",
         approval_token_id: str | None = None,
     ) -> AuditEntry:
         """Record an event into the audit trail."""
         seq = len(self._entries) + 1
         entry = AuditEntry(
             sequence_id=seq,
+            session_id=session_id,
+            correlation_id=correlation_id,
             actor_id=actor_id,
+            event_type=event_type,
             action_type=action_type,
-            permission_level=permission_level,
+            risk_level=risk_level,
             target_resource=target_resource,
             parameters=parameters,
             decision=decision,
@@ -98,3 +113,8 @@ class AuditLogger:
     def get_entries(self) -> list[AuditEntry]:
         """Return in-memory audit trail."""
         return list(self._entries)
+
+    def clear(self) -> None:
+        """Clear in-memory audit trail."""
+        self._entries.clear()
+        self._last_hash = self.GENESIS_HASH

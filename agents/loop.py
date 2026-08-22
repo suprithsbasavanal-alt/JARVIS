@@ -1,4 +1,4 @@
-"""The 11-Step Agent Execution Loop Orchestrator."""
+"""The 11-Step Agent Execution Loop Orchestrator for Phase 1."""
 
 from agents.base import AgentState, BaseAgent
 from agents.planner import TaskPlanner
@@ -6,7 +6,18 @@ from agents.verifier import OutputVerifier
 from config.schema import ModelTier
 from conversation.personality import PersonaGovernor
 from core.context import SessionContext
-from core.exceptions import HumanConfirmationRequiredError, PermissionDeniedError
+from core.exceptions import (
+    HumanConfirmationRequiredError,
+    MalformedToolRequestError,
+    ModelRoutingError,
+    PermissionDeniedError,
+    ProviderUnavailableError,
+    SandboxViolationError,
+    SecurityError,
+    ToolExecutionError,
+    ToolNotFoundError,
+    VerificationFailureError,
+)
 from memory.manager import MemoryManager
 from model_routing.router import ModelRouter
 from model_routing.schemas import (
@@ -21,7 +32,7 @@ from tools.registry import ToolRegistry
 
 
 class AgentLoop(BaseAgent):
-    """Coordinates request understanding, safety checks, tool execution, and response synthesis."""
+    """Deterministic 11-step agent execution pipeline."""
 
     def __init__(
         self,
@@ -49,20 +60,30 @@ class AgentLoop(BaseAgent):
         approval_token: ApprovalToken | None = None,
         approval_card: ApprovalCard | None = None,
     ) -> ModelResponse:
-        """Execute complete 11-step turn pipeline."""
-        self.state = AgentState.PARSING_INTENT
+        """Execute complete 11-step turn pipeline with fail-closed error handling."""
         context.touch()
+        correlation_id_str = str(context.correlation_id)
+        session_id_str = str(context.session_id)
 
-        # Step 1 & 2: User input ingestion & salutation derivation
+        # 1. RECEIVE & 2. NORMALIZE
+        self.state = AgentState.PARSING_INTENT
+        normalized_query = user_query.strip()
+        if not normalized_query:
+            return ModelResponse(
+                model_name="jarvis-core",
+                provider_name="system",
+                content="Please provide a query or instruction.",
+            )
+
+        # 3. CONTEXT ASSEMBLY & MEMORY RETRIEVAL
         system_prompt = PersonaGovernor.construct_system_prompt(context)
-        user_msg = ChatMessage(role=MessageRole.USER, content=user_query)
+        user_msg = ChatMessage(role=MessageRole.USER, content=normalized_query)
         self.memory.add_working_message(user_msg)
 
-        # Step 3: Context assembly with memory recall
-        relevant_memories = await self.memory.recall(user_query, limit=3)
+        relevant_memories = await self.memory.recall(normalized_query, limit=3)
         memory_context_str = ""
         if relevant_memories:
-            memory_context_str = "\nRelevant Persistent Memories:\n" + "\n".join(
+            memory_context_str = "\nRelevant Memories:\n" + "\n".join(
                 f"- [{m.category.value}] {m.content}" for m in relevant_memories
             )
 
@@ -71,7 +92,8 @@ class AgentLoop(BaseAgent):
             *self.memory.get_working_messages(),
         ]
 
-        # Step 4 & 5: Model request with tool schemas
+        # 4. INTENT & 5. PLAN (Model Routing with Tool Capability Schemas)
+        self.state = AgentState.PLANNING
         tool_schemas = self.tool_registry.get_tool_schemas_for_model()
         model_request = ModelRequest(
             messages=messages,
@@ -79,20 +101,41 @@ class AgentLoop(BaseAgent):
             tools=tool_schemas,
         )
 
-        self.state = AgentState.PLANNING
-        initial_response = await self.router.route(model_request, tier=ModelTier.FAST)
+        try:
+            initial_response = await self.router.route(model_request, tier=ModelTier.FAST)
+        except (ProviderUnavailableError, ModelRoutingError) as err:
+            self.state = AgentState.ERROR
+            self.audit.log(
+                actor_id=context.device_id,
+                session_id=session_id_str,
+                correlation_id=correlation_id_str,
+                event_type="PROVIDER_ERROR",
+                action_type="MODEL_ROUTING",
+                risk_level="NORMAL",
+                target_resource="model_router",
+                parameters={"error": str(err)},
+                decision="FAIL_CLOSED",
+            )
+            return ModelResponse(
+                model_name="jarvis-core",
+                provider_name="system",
+                content=f"I apologize, {context.get_salutation()}, but the requested model provider is unavailable. Failing closed safely.",
+            )
 
-        # If model did not request tool calls, synthesize and return directly
+        # 7. TOOL DECISION: Check if model proposed tool calls
         if not initial_response.tool_calls:
             self.state = AgentState.COMPLETED
             assistant_msg = ChatMessage(role=MessageRole.ASSISTANT, content=initial_response.content)
             self.memory.add_working_message(assistant_msg)
             self.audit.log(
                 actor_id=context.device_id,
-                action_type="CONVERSATION_TURN",
-                permission_level=context.permission_level.value,
+                session_id=session_id_str,
+                correlation_id=correlation_id_str,
+                event_type="CONVERSATION_TURN",
+                action_type="DIALOGUE",
+                risk_level="NORMAL",
                 target_resource="in_memory_dialogue",
-                parameters={"query_length": len(user_query)},
+                parameters={"query_length": len(normalized_query)},
                 decision="COMPLETED",
             )
             return initial_response
@@ -101,11 +144,23 @@ class AgentLoop(BaseAgent):
         for tool_call in initial_response.tool_calls:
             tool = self.tool_registry.get_tool(tool_call.tool_name)
             if not tool:
-                continue
+                self.state = AgentState.ERROR
+                self.audit.log(
+                    actor_id=context.device_id,
+                    session_id=session_id_str,
+                    correlation_id=correlation_id_str,
+                    event_type="TOOL_ERROR",
+                    action_type="TOOL_LOOKUP",
+                    risk_level="NORMAL",
+                    target_resource=tool_call.tool_name,
+                    parameters={},
+                    decision="TOOL_NOT_FOUND",
+                )
+                raise ToolNotFoundError(f"Requested tool '{tool_call.tool_name}' is not registered.")
 
             target_res = str(tool_call.arguments.get("path", tool_call.arguments.get("target", "sandbox/virtual")))
 
-            # Step 6: Security & Permission Check
+            # 6. SAFETY & PERMISSION CHECK
             decision = self.permission_engine.evaluate(
                 session=context,
                 action_name=tool.metadata.name,
@@ -117,7 +172,6 @@ class AgentLoop(BaseAgent):
                 card=approval_card,
             )
 
-            # Step 7: Handle Confirmation or Denial
             if decision == PermissionDecision.REQUIRES_HUMAN_CONFIRMATION:
                 self.state = AgentState.AWAITING_CONFIRMATION
                 card = ApprovalCard.create(
@@ -125,39 +179,73 @@ class AgentLoop(BaseAgent):
                     action_category=tool.metadata.action_category,
                     target_resource=target_res,
                     parameters=tool_call.arguments,
-                    risk_summary=f"Executing {tool.metadata.name} requires owner authorization.",
+                    risk_summary=f"Executing {tool.metadata.name} requires explicit human confirmation.",
                 )
                 self.audit.log(
                     actor_id=context.device_id,
+                    session_id=session_id_str,
+                    correlation_id=correlation_id_str,
+                    event_type="SECURITY_GATE",
                     action_type=tool.metadata.name,
-                    permission_level=context.permission_level.value,
+                    risk_level=tool.metadata.action_category.value,
                     target_resource=target_res,
                     parameters=tool_call.arguments,
                     decision="REQUIRES_CONFIRMATION",
                 )
-                raise HumanConfirmationRequiredError(tool.metadata.name, str(card.card_id))
+                raise HumanConfirmationRequiredError(tool.metadata.name, card)
 
             if decision != PermissionDecision.AUTHORIZED:
                 self.state = AgentState.ERROR
                 self.audit.log(
                     actor_id=context.device_id,
+                    session_id=session_id_str,
+                    correlation_id=correlation_id_str,
+                    event_type="SECURITY_BLOCK",
                     action_type=tool.metadata.name,
-                    permission_level=context.permission_level.value,
+                    risk_level=tool.metadata.action_category.value,
                     target_resource=target_res,
                     parameters=tool_call.arguments,
                     decision=f"DENIED:{decision.value}",
                 )
                 raise PermissionDeniedError(f"Permission denied for tool '{tool.metadata.name}': {decision.value}")
 
-            # Step 8: Sandboxed Tool Execution
+            # 8. EXECUTION (Confined to Sandbox)
             self.state = AgentState.EXECUTING_TOOL
-            tool_result = await tool.execute(tool_call.arguments, context)
+            try:
+                tool_result = await tool.execute(tool_call.arguments, context)
+            except SandboxViolationError as s_err:
+                self.state = AgentState.ERROR
+                self.audit.log(
+                    actor_id=context.device_id,
+                    session_id=session_id_str,
+                    correlation_id=correlation_id_str,
+                    event_type="SANDBOX_VIOLATION",
+                    action_type=tool.metadata.name,
+                    risk_level="HIGH",
+                    target_resource=target_res,
+                    parameters=tool_call.arguments,
+                    decision="BLOCKED",
+                )
+                raise s_err
+            except MalformedToolRequestError as m_err:
+                self.state = AgentState.ERROR
+                self.audit.log(
+                    actor_id=context.device_id,
+                    session_id=session_id_str,
+                    correlation_id=correlation_id_str,
+                    event_type="MALFORMED_TOOL_REQUEST",
+                    action_type=tool.metadata.name,
+                    risk_level="NORMAL",
+                    target_resource=target_res,
+                    parameters=tool_call.arguments,
+                    decision="REJECTED",
+                )
+                raise m_err
 
-            # Step 9 & 10: Verification & Sanitization
+            # 9. VERIFICATION
             self.state = AgentState.VERIFYING_OUTPUT
             verified_output = self.verifier.verify_tool_result(tool_result)
 
-            # Add tool output to context and synthesize final response
             messages.append(
                 ChatMessage(
                     role=MessageRole.TOOL,
@@ -166,7 +254,7 @@ class AgentLoop(BaseAgent):
                 )
             )
 
-        # Step 11: Final Response Synthesis & Audit
+        # 10. RESPONSE SYNTHESIS & 11. AUDIT
         self.state = AgentState.SYNTHESIZING_RESPONSE
         synthesis_req = ModelRequest(messages=messages, tier=ModelTier.REASONING.value)
         final_response = await self.router.route(synthesis_req, tier=ModelTier.REASONING)
@@ -177,11 +265,14 @@ class AgentLoop(BaseAgent):
 
         self.audit.log(
             actor_id=context.device_id,
-            action_type="AGENT_LOOP_EXECUTION",
-            permission_level=context.permission_level.value,
-            target_resource="tool_execution",
-            parameters={"tools_count": len(initial_response.tool_calls)},
-            decision="COMPLETED",
+            session_id=session_id_str,
+            correlation_id=correlation_id_str,
+            event_type="AGENT_EXECUTION_COMPLETED",
+            action_type="TOOL_RUN",
+            risk_level="NORMAL",
+            target_resource="sandbox",
+            parameters={"tool_calls_count": len(initial_response.tool_calls)},
+            decision="SUCCESS",
             approval_token_id=str(approval_token.token_id) if approval_token else None,
         )
 

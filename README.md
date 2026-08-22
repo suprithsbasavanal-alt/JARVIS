@@ -1,8 +1,8 @@
 # JARVIS — Personal AI Assistant
 
-> **PHASE 0 — SAFE DEVELOPMENT ONLY**
+> **PHASE 1 — SAFE SANDBOX CORE ONLY**
 
-JARVIS is an architectural framework and design specification for a private, security-first personal AI assistant built for **macOS** and **Android**.
+JARVIS is a private, security-first personal AI assistant built for **macOS** and **Android**.
 
 ---
 

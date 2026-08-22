@@ -6,8 +6,8 @@ import hashlib
 import json
 from typing import Any
 from uuid import UUID, uuid4
-from pydantic import BaseModel, Field
 from config.schema import PermissionLevel
+from core.compat import BaseModel, Field
 from core.context import SessionContext
 from core.types import ActionCategory
 
@@ -19,6 +19,7 @@ class PermissionDecision(str, Enum):
     DENIED_INSUFFICIENT_LEVEL = "DENIED_INSUFFICIENT_LEVEL"
     DENIED_RESOURCE_OUT_OF_BOUNDS = "DENIED_RESOURCE_OUT_OF_BOUNDS"
     DENIED_EMERGENCY_LOCK = "DENIED_EMERGENCY_LOCK"
+    DENIED_DEFAULT = "DENIED_DEFAULT"
 
 
 class ApprovalCard(BaseModel):
@@ -32,6 +33,7 @@ class ApprovalCard(BaseModel):
     risk_summary: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at_epoch: float
+    is_approved: bool = False
 
     @classmethod
     def create(
@@ -41,7 +43,7 @@ class ApprovalCard(BaseModel):
         target_resource: str,
         parameters: dict[str, Any],
         risk_summary: str,
-        ttl_seconds: int = 60
+        ttl_seconds: int = 60,
     ) -> "ApprovalCard":
         """Factory method to construct an approval card with payload hash and expiration."""
         payload_str = json.dumps(parameters, sort_keys=True)
@@ -55,6 +57,7 @@ class ApprovalCard(BaseModel):
             payload_hash=payload_hash,
             risk_summary=risk_summary,
             expires_at_epoch=expires_at,
+            is_approved=False,
         )
 
 
@@ -81,7 +84,7 @@ class ApprovalToken(BaseModel):
 
 
 class PermissionEngine:
-    """Evaluator for role and capability-based access control."""
+    """Evaluator for capability and role-based access control with Default-Deny posture."""
 
     def __init__(self, emergency_locked: bool = False) -> None:
         self.emergency_locked = emergency_locked
@@ -101,33 +104,44 @@ class PermissionEngine:
         approval_token: ApprovalToken | None = None,
         card: ApprovalCard | None = None,
     ) -> PermissionDecision:
-        """Evaluate permission for a proposed tool action."""
+        """Evaluate permission for a proposed tool action. Default Deny."""
         if self.emergency_locked:
             return PermissionDecision.DENIED_EMERGENCY_LOCK
 
-        # Level 0 (LOCKED) cannot run any tools
+        # 1. Level 0 (LOCKED) cannot run any tools under any circumstance
         if session.permission_level == PermissionLevel.LOCKED:
             return PermissionDecision.DENIED_INSUFFICIENT_LEVEL
 
-        # Normal tier trying to run sensitive tools
+        # 2. Check path traversal and whitelist enforcement first
+        if target_resource.startswith("file://") or "/" in target_resource:
+            clean_path = target_resource.removeprefix("file://")
+            # Prohibit path traversal patterns
+            if ".." in clean_path:
+                return PermissionDecision.DENIED_RESOURCE_OUT_OF_BOUNDS
+
+            allowed = any(
+                clean_path.startswith(whitelisted) or whitelisted in clean_path
+                for whitelisted in session.active_whitelist_paths
+            )
+            if not allowed and not clean_path.startswith("sandbox/"):
+                return PermissionDecision.DENIED_RESOURCE_OUT_OF_BOUNDS
+
+        # 3. Actions classified as SENSITIVE, DESTRUCTIVE, or IRREVERSIBLE require HITL approval
+        if action_category in (ActionCategory.SENSITIVE, ActionCategory.DESTRUCTIVE, ActionCategory.IRREVERSIBLE):
+            if approval_token is None or card is None or not approval_token.is_valid_for(card):
+                return PermissionDecision.REQUIRES_HUMAN_CONFIRMATION
+            return PermissionDecision.AUTHORIZED
+
+        # 4. Safe and Reversible tools require session tier >= required_level
         tier_hierarchy = {
             PermissionLevel.LOCKED: 0,
             PermissionLevel.NORMAL: 1,
             PermissionLevel.SENSITIVE: 2,
         }
-        if tier_hierarchy[session.permission_level] < tier_hierarchy[required_level]:
+        user_tier_rank = tier_hierarchy.get(session.permission_level, 0)
+        required_tier_rank = tier_hierarchy.get(required_level, 1)
+
+        if user_tier_rank < required_tier_rank:
             return PermissionDecision.DENIED_INSUFFICIENT_LEVEL
-
-        # Actions classified as SENSITIVE, DESTRUCTIVE, or IRREVERSIBLE require HITL approval
-        if action_category in (ActionCategory.SENSITIVE, ActionCategory.DESTRUCTIVE, ActionCategory.IRREVERSIBLE):
-            if approval_token is None or card is None or not approval_token.is_valid_for(card):
-                return PermissionDecision.REQUIRES_HUMAN_CONFIRMATION
-
-        # Path traversal and whitelist enforcement
-        if target_resource.startswith("file://") or "/" in target_resource:
-            clean_path = target_resource.removeprefix("file://")
-            allowed = any(clean_path.startswith(whitelisted) for whitelisted in session.active_whitelist_paths)
-            if not allowed:
-                return PermissionDecision.DENIED_RESOURCE_OUT_OF_BOUNDS
 
         return PermissionDecision.AUTHORIZED

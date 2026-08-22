@@ -1,6 +1,6 @@
 """Task Planner and Intent Decomposer."""
 
-from pydantic import BaseModel, Field
+from core.compat import BaseModel, Field
 
 
 class PlanStep(BaseModel):

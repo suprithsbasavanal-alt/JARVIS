@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from typing import Any
-from pydantic import BaseModel, Field
+from core.compat import BaseModel, Field
 from config.schema import PermissionLevel
 from core.context import SessionContext
 from core.types import ActionCategory

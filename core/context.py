@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
-from pydantic import BaseModel, Field
+from core.compat import BaseModel, Field
 from config.schema import PermissionLevel
 from core.types import ExecutionContext
 
@@ -10,6 +10,7 @@ from core.types import ExecutionContext
 class SessionContext(BaseModel):
     """Context state for an active conversation turn and session."""
     session_id: UUID = Field(default_factory=uuid4)
+    correlation_id: UUID = Field(default_factory=uuid4)
     device_id: str = "desktop-local-primary"
     user_name: str = "Suprith"
     formal_salutation: str = "Sir"
@@ -21,8 +22,9 @@ class SessionContext(BaseModel):
     last_activity_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     def touch(self) -> None:
-        """Update last activity timestamp."""
+        """Update last activity timestamp and generate a new correlation ID for the turn."""
         self.last_activity_at = datetime.now(timezone.utc)
+        self.correlation_id = uuid4()
 
     def get_salutation(self) -> str:
         """Derive appropriate salutation based on context rules."""

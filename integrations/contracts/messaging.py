@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from typing import Literal
-from pydantic import BaseModel
+from core.compat import BaseModel, Field
 from integrations.base import BaseIntegration
 
 

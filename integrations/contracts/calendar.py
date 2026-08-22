@@ -1,7 +1,7 @@
 """Abstract Calendar Integration Contract (Google / Apple Calendar)."""
 
 from abc import ABC, abstractmethod
-from pydantic import BaseModel, Field
+from core.compat import BaseModel, Field
 from integrations.base import BaseIntegration
 
 

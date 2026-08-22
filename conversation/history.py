@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
-from pydantic import BaseModel, Field
+from core.compat import BaseModel, Field
 from model_routing.schemas import ChatMessage, MessageRole
 
 

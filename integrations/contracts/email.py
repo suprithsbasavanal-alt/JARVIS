@@ -1,7 +1,7 @@
 """Abstract Email Integration Contract (Gmail / IMAP)."""
 
 from abc import ABC, abstractmethod
-from pydantic import BaseModel, Field
+from core.compat import BaseModel, Field
 from integrations.base import BaseIntegration
 
 
