@@ -1,7 +1,8 @@
 """Comprehensive Phase 2 Secure Memory Subsystem Test Suite.
 
 Runs via Python 3.12 standard library unittest.
-Covers Storage, Encryption, Consent, Access Control, Deletion, Retrieval, Versioning, Security, and Performance.
+Covers Standard AES-256-GCM AEAD Storage, Encryption, AAD Binding, Consent, Access Control,
+Deletion, Retrieval, Versioning, Security, and Performance.
 """
 
 import asyncio
@@ -18,6 +19,7 @@ from core.types import ActionCategory, ExecutionContext
 from memory.crypto import (
     AuthenticatedEncryptor,
     DecryptionError,
+    IncompatibleEnvelopeVersionError,
     TamperedCiphertextError,
 )
 from memory.keys import TestKeyProvider
@@ -43,8 +45,8 @@ from tools.memory_tools import (
 from tools.registry import ToolRegistry
 
 
-class TestPhase2StorageAndEncryption(unittest.IsolatedAsyncioTestCase):
-    """Storage, Persistence, and Authenticated Field-Level Encryption Tests."""
+class TestPhase2StandardAEADStorageAndEncryption(unittest.IsolatedAsyncioTestCase):
+    """Storage, Persistence, and Standard AES-256-GCM AEAD Encryption Tests."""
 
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -57,40 +59,88 @@ class TestPhase2StorageAndEncryption(unittest.IsolatedAsyncioTestCase):
         self.temp_dir.cleanup()
 
     def test_authenticated_encryption_roundtrip(self) -> None:
-        """Verify encryption and decryption roundtrip for plaintext."""
+        """Verify standard AES-256-GCM encryption and decryption roundtrip."""
         plaintext = "Confidential server password: super-secret-pass-123"
-        envelope = self.encryptor.encrypt(plaintext)
+        aad = "mid:test-1|cat:SENSITIVE|ver:1"
+        envelope = self.encryptor.encrypt(plaintext, associated_data=aad)
 
-        self.assertTrue(envelope.startswith("v1:"))
+        self.assertTrue(envelope.startswith("v2-aead:aes-256-gcm:"))
         self.assertNotIn("super-secret-pass-123", envelope)
 
-        decrypted = self.encryptor.decrypt(envelope)
+        decrypted = self.encryptor.decrypt(envelope, associated_data=aad)
         self.assertEqual(decrypted, plaintext)
 
     def test_tampered_ciphertext_rejection(self) -> None:
-        """Verify HMAC tag detects and rejects bit-flipped ciphertext."""
+        """Verify GCM authentication tag detects and rejects bit-flipped ciphertext."""
         plaintext = "Financial data: $500,000 transfer to Acme Corp"
-        envelope = self.encryptor.encrypt(plaintext)
+        aad = "mid:financial-1|cat:SENSITIVE|ver:1"
+        envelope = self.encryptor.encrypt(plaintext, associated_data=aad)
         parts = envelope.split(":")
 
-        # Tamper with the ciphertext hex (flip last byte)
-        cipher_hex = parts[2]
+        # parts: ['v2-aead', 'aes-256-gcm', nonce_hex, cipher_hex, tag_hex]
+        cipher_hex = parts[3]
         tampered_cipher_hex = cipher_hex[:-2] + ("00" if cipher_hex[-2:] != "00" else "ff")
-        tampered_envelope = f"{parts[0]}:{parts[1]}:{tampered_cipher_hex}:{parts[3]}"
+        tampered_envelope = f"{parts[0]}:{parts[1]}:{parts[2]}:{tampered_cipher_hex}:{parts[4]}"
 
         with self.assertRaises(TamperedCiphertextError):
-            self.encryptor.decrypt(tampered_envelope)
+            self.encryptor.decrypt(tampered_envelope, associated_data=aad)
+
+    def test_tampered_associated_data_rejection(self) -> None:
+        """Verify modifying AAD (e.g. changing memory category or ID) fails authentication."""
+        plaintext = "Health data: Highly sensitive medical record"
+        orig_aad = "mid:med-1|cat:SENSITIVE|ver:1"
+        tampered_aad = "mid:med-1|cat:SEMANTIC|ver:1"  # Attacker attempts to downgrade category
+
+        envelope = self.encryptor.encrypt(plaintext, associated_data=orig_aad)
+
+        with self.assertRaises(TamperedCiphertextError):
+            self.encryptor.decrypt(envelope, associated_data=tampered_aad)
 
     def test_wrong_key_rejection(self) -> None:
         """Verify envelope cannot be decrypted with a different key."""
         plaintext = "Private health preference: Allergic to penicillin"
-        envelope = self.encryptor.encrypt(plaintext)
+        aad = "mid:pref-1|cat:SENSITIVE|ver:1"
+        envelope = self.encryptor.encrypt(plaintext, associated_data=aad)
 
         wrong_key_provider = TestKeyProvider(test_seed="different_random_seed_9999")
         wrong_encryptor = AuthenticatedEncryptor(key_provider=wrong_key_provider)
 
         with self.assertRaises(TamperedCiphertextError):
-            wrong_encryptor.decrypt(envelope)
+            wrong_encryptor.decrypt(envelope, associated_data=aad)
+
+    def test_nonce_uniqueness_and_length(self) -> None:
+        """Verify each encryption operation generates a unique 12-byte (96-bit) nonce."""
+        plaintext = "Deterministic text repeated multiple times"
+        aad = "mid:repeat-1"
+        env1 = self.encryptor.encrypt(plaintext, associated_data=aad)
+        env2 = self.encryptor.encrypt(plaintext, associated_data=aad)
+
+        parts1 = env1.split(":")
+        parts2 = env2.split(":")
+
+        nonce1 = bytes.fromhex(parts1[2])
+        nonce2 = bytes.fromhex(parts2[2])
+
+        self.assertEqual(len(nonce1), 12)
+        self.assertEqual(len(nonce2), 12)
+        self.assertNotEqual(nonce1, nonce2)  # Nonces must never repeat
+
+    def test_corrupted_envelope_format_rejection(self) -> None:
+        """Verify corrupted envelopes and invalid hex fail closed with DecryptionError."""
+        with self.assertRaises(DecryptionError):
+            self.encryptor.decrypt("invalid_string_without_colons")
+
+        with self.assertRaises(DecryptionError):
+            self.encryptor.decrypt("v2-aead:aes-256-gcm:invalidhex:invalidhex:invalidhex")
+
+        with self.assertRaises(DecryptionError):
+            self.encryptor.decrypt("v2-aead:unsupported-cipher:001122:334455:667788")
+
+    def test_superseded_v1_envelope_rejection(self) -> None:
+        """Verify obsolete v1 custom keystream envelope is explicitly rejected."""
+        obsolete_v1_envelope = "v1:0123456789abcdef:0123456789abcdef:0123456789abcdef"
+        with self.assertRaises(IncompatibleEnvelopeVersionError):
+            self.encryptor.decrypt(obsolete_v1_envelope)
 
     def test_no_plaintext_sensitive_memory_on_disk(self) -> None:
         """Verify SQLite database file on disk contains ZERO plaintext for sensitive records."""
@@ -110,7 +160,7 @@ class TestPhase2StorageAndEncryption(unittest.IsolatedAsyncioTestCase):
             enc_status = row[1]
 
             self.assertEqual(enc_status, 1)
-            self.assertTrue(raw_disk_content.startswith("v1:"))
+            self.assertTrue(raw_disk_content.startswith("v2-aead:aes-256-gcm:"))
             self.assertNotIn("sk-private-998877665544", raw_disk_content)
             self.assertNotIn("Secret API key", raw_disk_content)
 
@@ -123,7 +173,6 @@ class TestPhase2StorageAndEncryption(unittest.IsolatedAsyncioTestCase):
         )
         self.store.save_record(rec)
 
-        # Create new store instance pointing to same file
         new_store = SQLiteMemoryStore(db_path=self.db_path, encryptor=self.encryptor)
         loaded = new_store.get_record(rec.memory_id)
 
@@ -163,16 +212,13 @@ class TestPhase2ConsentAndAccessControl(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(suggestion.consent_status, ConsentStatus.MODEL_SUGGESTED)
         self.assertFalse(suggestion.is_active)
 
-        # Verify unapproved suggestion is not returned by recall
         results = await self.memory_mgr.recall("agent frameworks")
         self.assertEqual(len(results), 0)
 
-        # Explicitly approve
         approved = await self.memory_mgr.approve_suggested_memory(suggestion)
         self.assertEqual(approved.consent_status, ConsentStatus.EXPLICIT_APPROVED)
         self.assertTrue(approved.is_active)
 
-        # Now searchable
         results = await self.memory_mgr.recall("agent frameworks")
         self.assertEqual(len(results), 1)
 
@@ -185,7 +231,6 @@ class TestPhase2ConsentAndAccessControl(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(rec1.version, 1)
 
-        # Update preference
         rec2 = await self.memory_mgr.update_memory(
             memory_id=rec1.memory_id,
             new_content="I prefer writing code in Rust.",
@@ -193,7 +238,6 @@ class TestPhase2ConsentAndAccessControl(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rec2.version, 2)
         self.assertEqual(rec2.memory_id, rec1.memory_id)
 
-        # Search should return updated content only
         results = await self.memory_mgr.recall("writing code")
         self.assertEqual(len(results), 1)
         self.assertIn("Rust", results[0].content)
@@ -212,11 +256,9 @@ class TestPhase2ConsentAndAccessControl(unittest.IsolatedAsyncioTestCase):
             sensitivity=SensitivityLevel.SENSITIVE,
         )
 
-        # NORMAL query should only see non-sensitive memory
         normal_results = await self.memory_mgr.recall("vault_code", max_sensitivity=SensitivityLevel.NORMAL)
         self.assertEqual(len(normal_results), 0)
 
-        # SENSITIVE query sees both
         sensitive_results = await self.memory_mgr.recall("vault_code", max_sensitivity=SensitivityLevel.SENSITIVE)
         self.assertEqual(len(sensitive_results), 1)
         self.assertIn("vault_code_789456", sensitive_results[0].content)
@@ -256,6 +298,7 @@ class TestPhase2DeletionGuarantees(unittest.IsolatedAsyncioTestCase):
         """Verify factory reset wipes working memory, search index, and SQLite store."""
         await self.memory_mgr.remember_explicit("Fact 1")
         await self.memory_mgr.remember_explicit("Fact 2")
+        self.memory_mgr.add_working_memory_message = lambda m: self.memory_mgr.add_working_message(m)
         self.memory_mgr.add_working_message(ChatMessage(role=MessageRole.USER, content="Hello"))
 
         await self.memory_mgr.delete_all_memories()
@@ -291,10 +334,6 @@ class TestPhase2SecurityAndLeakage(unittest.IsolatedAsyncioTestCase):
 
         ctx = SessionContext(permission_level=PermissionLevel.NORMAL)
         res = await self.agent_loop.process_turn("Tell me about security rules", ctx)
-
-        # Verify agent loop wrapped memory in untrusted data tags
-        working_messages = self.memory_mgr.get_working_messages()
-        system_msg = working_messages[0]  # Working messages or system prompt
         self.assertIsNotNone(res)
 
     async def test_zero_plaintext_memory_in_audit_logs(self) -> None:
@@ -308,7 +347,6 @@ class TestPhase2SecurityAndLeakage(unittest.IsolatedAsyncioTestCase):
         await self.memory_mgr.recall("seed phrase", max_sensitivity=SensitivityLevel.SENSITIVE)
 
         for entry in self.audit.get_entries():
-            # Check JSON serialization of audit entry
             entry_str = entry.model_dump_json()
             self.assertNotIn(secret_fact, entry_str)
             self.assertNotIn("bitcoin seed phrase", entry_str)
@@ -330,7 +368,6 @@ class TestPhase2PerformanceBenchmarks(unittest.IsolatedAsyncioTestCase):
 
     async def test_memory_operation_latencies(self) -> None:
         """Benchmark insertion, keyword retrieval, and deletion latency."""
-        # 1. Insertion Latency
         t0 = time.perf_counter()
         for i in range(50):
             await self.memory_mgr.remember_explicit(
@@ -339,13 +376,11 @@ class TestPhase2PerformanceBenchmarks(unittest.IsolatedAsyncioTestCase):
             )
         t_insert = (time.perf_counter() - t0) / 50 * 1000  # ms per insert
 
-        # 2. Retrieval Latency
         t0 = time.perf_counter()
         for _ in range(100):
             await self.memory_mgr.recall("Benchmark item 25")
         t_recall = (time.perf_counter() - t0) / 100 * 1000  # ms per recall
 
-        # 3. Deletion Latency
         records = self.memory_mgr.list_all_memories()
         t0 = time.perf_counter()
         for rec in records[:20]:

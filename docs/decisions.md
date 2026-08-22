@@ -101,13 +101,13 @@ This document records the foundational architectural decisions, trade-off analys
 
 ---
 
-### ADR-008: Authenticated Field-Level Encryption and Inverted Index for Memory
-- **Status**: Accepted
-- **Context**: Phase 2 requires persistent memory with zero plaintext sensitive data on disk, strict consent boundaries, high performance (<2ms retrieval), and zero mandatory external C-extensions or heavy vector engine downloads in the development sandbox.
-- **Decision**: Implement **Application-Level Authenticated Encryption (Encrypt-then-MAC with HMAC-SHA256 and key separation)** on SQLite, paired with an **In-Memory Inverted Keyword Index** and modular **EmbeddingProvider/VectorIndex** interfaces.
+### ADR-008: Standard AES-256-GCM AEAD Field-Level Encryption and Inverted Index
+- **Status**: Accepted (Security Reviewed)
+- **Context**: Phase 2 requires persistent memory with zero plaintext sensitive data on disk, strict consent boundaries, high performance (<2ms retrieval), and standard, peer-reviewed cryptographic primitives.
+- **Decision**: Implement **Standard AES-256-GCM AEAD (NIST SP 800-38D)** backed by OpenSSL / libcrypto with **Authenticated Associated Data (AAD)** binding memory metadata, paired with an **In-Memory Inverted Keyword Index** and modular **EmbeddingProvider/VectorIndex** interfaces.
 - **Rationale**:
-  1. Allows hermetic execution without requiring compiled SQLCipher binaries or external vector databases during core sandbox development.
-  2. Guarantees confidentiality and tampering rejection (`TamperedCiphertextError`) for sensitive memory fields on disk.
+  1. Uses standard, peer-reviewed NIST SP 800-38D AEAD construction rather than any homemade cipher or keystream.
+  2. Guarantees confidentiality and tampering rejection (`TamperedCiphertextError`) for sensitive memory fields and bound metadata on disk.
   3. Provides sub-millisecond retrieval (<0.1ms) while decoupling storage from future vector database backends (Qdrant/SQLite-VSS).
 - **Consequences**: Key provider interface cleanly abstracts test sandbox keys from future hardware-backed OS Keychain storage.
 

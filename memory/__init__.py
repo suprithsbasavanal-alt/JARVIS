@@ -5,6 +5,8 @@ from memory.crypto import (
     BaseEncryptor,
     CryptoError,
     DecryptionError,
+    IncompatibleEnvelopeVersionError,
+    TamperedAssociatedDataError,
     TamperedCiphertextError,
 )
 from memory.indexing import (
@@ -36,6 +38,7 @@ __all__ = [
     "DecryptionError",
     "EmbeddingProvider",
     "HardwareKeyProvider",
+    "IncompatibleEnvelopeVersionError",
     "KeyProvider",
     "KeywordMemoryIndex",
     "MemoryCategory",
@@ -48,6 +51,7 @@ __all__ = [
     "RetentionPolicy",
     "SQLiteMemoryStore",
     "SensitivityLevel",
+    "TamperedAssociatedDataError",
     "TamperedCiphertextError",
     "TestKeyProvider",
     "VectorIndex",

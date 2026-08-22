@@ -13,10 +13,13 @@ Phase 2 implemented a persistent, encrypted, inspectable, and user-controlled me
 1. **Persistent ACID Storage (`memory/sqlite_store.py`)**:
    - Built on standard library `sqlite3` with indexed schema migrations (`memories`, `memory_id`, `category`, `sensitivity`, `is_active`).
    - Supports both in-memory testing and persistent disk storage.
-2. **Authenticated Field Encryption (`memory/crypto.py`)**:
-   - Encrypt-then-MAC envelope encryption with key separation (SHA-256 counter-mode stream keystream + HMAC-SHA256 integrity tag).
-   - Guarantees confidentiality and authenticity (`v1:<nonce>:<ciphertext>:<tag>`).
-   - Tampered ciphertexts and incorrect keys are rejected with `TamperedCiphertextError`.
+2. **Standard AES-256-GCM AEAD Field Encryption (`memory/crypto.py`)**:
+   - Standard NIST SP 800-38D AEAD envelope encryption backed by OpenSSL / libcrypto.
+   - Generates unique 96-bit (12-byte) random nonces via `secrets.token_bytes(12)`.
+   - Binds Authenticated Associated Data (AAD) over `mid:<id>|cat:<category>|ver:<version>|enc:v2-aead`.
+   - Guarantees confidentiality and authenticity (`v2-aead:aes-256-gcm:<nonce>:<ciphertext>:<tag>`).
+   - Tampered ciphertexts, mismatched AAD, and incorrect keys are rejected with `TamperedCiphertextError`.
+   - Rejects legacy/custom `v1:` envelopes with `IncompatibleEnvelopeVersionError`.
    - Zero plaintext on disk for sensitive records.
 3. **Key Provider Architecture (`memory/keys.py`)**:
    - Abstract `KeyProvider` interface.
@@ -69,15 +72,19 @@ Phase 2 implemented a persistent, encrypted, inspectable, and user-controlled me
 
 ## 3. Test Verification & Performance Benchmark Results
 
-All 36 tests (20 Phase 1 tests + 16 Phase 2 memory tests) executed with **100% pass rate in 0.100s**:
+All 40 tests (20 Phase 1 tests + 20 Phase 2 memory & AEAD security tests) executed with **100% pass rate in 0.115s**:
 
 ```bash
 python3.12 -m unittest discover -s tests -v
 ```
 
-### Key Memory Test Results
-- `test_authenticated_encryption_roundtrip`: Plaintext encrypted to `v1:...` and restored accurately $\rightarrow$ **PASS**.
-- `test_tampered_ciphertext_rejection`: Bit flips rejected via HMAC $\rightarrow$ **PASS**.
+### Key Memory & AEAD Test Results
+- `test_authenticated_encryption_roundtrip`: Standard AES-256-GCM encryption to `v2-aead:aes-256-gcm:...` and restoration $\rightarrow$ **PASS**.
+- `test_tampered_ciphertext_rejection`: Bit-flipped ciphertext rejected by GCM tag $\rightarrow$ **PASS**.
+- `test_tampered_associated_data_rejection`: Tampered AAD (changing category/ID) rejected by GCM tag $\rightarrow$ **PASS**.
+- `test_nonce_uniqueness_and_length`: 12-byte (96-bit) nonces verified unique per message $\rightarrow$ **PASS**.
+- `test_corrupted_envelope_format_rejection`: Invalid hex and unknown cipher prefixes fail closed $\rightarrow$ **PASS**.
+- `test_superseded_v1_envelope_rejection`: Custom v1 envelopes rejected with `IncompatibleEnvelopeVersionError` $\rightarrow$ **PASS**.
 - `test_wrong_key_rejection`: Decryption with mismatched key rejected $\rightarrow$ **PASS**.
 - `test_no_plaintext_sensitive_memory_on_disk`: Direct SQLite inspection contains zero plaintext $\rightarrow$ **PASS**.
 - `test_persistence_across_reconnection`: Memory survives store re-instantiation $\rightarrow$ **PASS**.

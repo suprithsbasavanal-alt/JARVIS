@@ -55,16 +55,17 @@ class MemoryRecord(BaseModel):
 
 ---
 
-## 3. Application-Level Authenticated Encryption Design
+## 3. Standard AES-256-GCM AEAD Encryption Design
 
-Sensitive records are encrypted using an **Encrypt-then-MAC** envelope construction:
+Sensitive records are encrypted using standard **AES-256-GCM (NIST SP 800-38D)** Authenticated Encryption with Associated Data (AEAD) backed by OpenSSL / libcrypto:
 
-- **Confidentiality**: Counter-mode keystream derived from SHA-256 with a unique 16-byte random cryptographic nonce.
-- **Authenticity / Integrity**: HMAC-SHA256 calculated over `v1 || nonce || ciphertext` using a dedicated authentication key.
-- **Key Separation**: Encryption and authentication keys are derived independently via HKDF/HMAC from the key provider.
-- **Serialized Envelope Format**: `v1:<hex_nonce>:<hex_ciphertext>:<hex_tag>`
-- **Tamper Rejection**: Any modification to the ciphertext or tag raises `TamperedCiphertextError`.
-- **Zero Plaintext on Disk**: Inspecting the raw SQLite file verifies that sensitive content is never stored in plaintext.
+- **Confidentiality**: Hardware-accelerated AES-256 block cipher in Galois/Counter Mode.
+- **Nonce Generation**: Cryptographically secure, unique 96-bit (12-byte) random nonce generated via `secrets.token_bytes(12)` per encryption operation.
+- **Authenticated Associated Data (AAD)**: Contextually binds record metadata (`mid:<memory_id>|cat:<category>|ver:<version>|enc:v2-aead`). Any tampering with record ID, category, or version in the SQLite database invalidates the 128-bit authentication tag and triggers `TamperedCiphertextError`.
+- **Key Separation**: Encryption key derived independently from the key provider (`KeyProvider` interface).
+- **Serialized Envelope Format**: `v2-aead:aes-256-gcm:<hex_nonce_12b>:<hex_ciphertext>:<hex_tag_16b>`
+- **Strict Version Rejection**: Legacy/custom `v1:` envelopes are explicitly rejected with `IncompatibleEnvelopeVersionError`.
+- **Zero Plaintext on Disk**: Verified by direct SQLite file inspection tests.
 
 ---
 

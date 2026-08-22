@@ -1,4 +1,4 @@
-"""Persistent SQLite Storage Engine with Authenticated Field Encryption."""
+"""Persistent SQLite Storage Engine with Standard AEAD Field Encryption."""
 
 from datetime import datetime, timezone
 import json
@@ -16,7 +16,7 @@ from memory.long_term import (
 
 
 class SQLiteMemoryStore:
-    """ACID-compliant SQLite store for persistent memories with field-level encryption."""
+    """ACID-compliant SQLite store for persistent memories with standard AEAD field encryption."""
 
     def __init__(
         self,
@@ -74,13 +74,19 @@ class SQLiteMemoryStore:
         if self._shared_conn is None:
             conn.close()
 
+    def _generate_aad(self, memory_id: str | UUID, category: str | MemoryType, version: int) -> str:
+        """Construct deterministic Authenticated Associated Data (AAD) string."""
+        cat_val = category.value if isinstance(category, MemoryType) else str(category)
+        return f"mid:{memory_id}|cat:{cat_val}|ver:{version}|enc:v2-aead"
+
     def _row_to_record(self, row: sqlite3.Row) -> MemoryRecord:
-        """Deserialize database row into MemoryRecord with decryption if needed."""
+        """Deserialize database row into MemoryRecord with AEAD decryption and AAD verification."""
         is_encrypted = bool(row["encryption_status"])
         raw_content = row["content"]
 
         if is_encrypted:
-            content = self.encryptor.decrypt(raw_content)
+            aad = self._generate_aad(row["memory_id"], row["category"], int(row["version"]))
+            content = self.encryptor.decrypt(raw_content, associated_data=aad)
         else:
             content = raw_content
 
@@ -102,10 +108,11 @@ class SQLiteMemoryStore:
         )
 
     def save_record(self, record: MemoryRecord) -> None:
-        """Persist or update memory record. Sensitive records are encrypted before writing."""
+        """Persist or update memory record. Sensitive records are AEAD encrypted with AAD binding."""
         should_encrypt = record.sensitivity == SensitivityLevel.SENSITIVE or record.category == MemoryType.SENSITIVE
         if should_encrypt:
-            stored_content = self.encryptor.encrypt(record.content)
+            aad = self._generate_aad(record.memory_id, record.category, record.version)
+            stored_content = self.encryptor.encrypt(record.content, associated_data=aad)
             encryption_status = 1
         else:
             stored_content = record.content
