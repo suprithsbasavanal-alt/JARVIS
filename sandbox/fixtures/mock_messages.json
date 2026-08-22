@@ -1,0 +1,18 @@
+[
+  {
+    "message_id": "msg-mock-201",
+    "platform": "telegram",
+    "sender": "@alex_engineer",
+    "recipient": "@suprith",
+    "text_content": "Have you reviewed the new SQLite encryption benchmarks?",
+    "timestamp_iso": "2026-08-22T11:15:00Z"
+  },
+  {
+    "message_id": "msg-mock-202",
+    "platform": "whatsapp",
+    "sender": "+15551234567",
+    "recipient": "+15559876543",
+    "text_content": "Team meeting is rescheduled to 3 PM.",
+    "timestamp_iso": "2026-08-22T12:00:00Z"
+  }
+]

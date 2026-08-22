@@ -1,0 +1,18 @@
+[
+  {
+    "message_id": "email-mock-001",
+    "sender": "colleague@example.com",
+    "recipient": "suprith@example.com",
+    "subject": "Architecture Design Review",
+    "body_text": "Hi Suprith, let's review the Phase 0 security specifications tomorrow.",
+    "received_at": "2026-08-22T10:00:00Z"
+  },
+  {
+    "message_id": "email-mock-002",
+    "sender": "newsletter@techdigest.com",
+    "recipient": "suprith@example.com",
+    "subject": "Weekly AI Research Digest",
+    "body_text": "Top papers on LLM agents and on-device whisper models.",
+    "received_at": "2026-08-22T08:30:00Z"
+  }
+]

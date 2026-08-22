@@ -1,0 +1,20 @@
+[
+  {
+    "event_id": "evt-mock-101",
+    "title": "JARVIS Phase 0 Architecture Review",
+    "start_time_iso": "2026-08-23T14:00:00Z",
+    "end_time_iso": "2026-08-23T15:00:00Z",
+    "attendees": ["suprith@example.com"],
+    "location": "Virtual",
+    "description": "Walkthrough of threat model and capability-based security model."
+  },
+  {
+    "event_id": "evt-mock-102",
+    "title": "Weekly Planning",
+    "start_time_iso": "2026-08-24T09:00:00Z",
+    "end_time_iso": "2026-08-24T09:30:00Z",
+    "attendees": ["suprith@example.com"],
+    "location": "Desk",
+    "description": "Review priorities for the week."
+  }
+]

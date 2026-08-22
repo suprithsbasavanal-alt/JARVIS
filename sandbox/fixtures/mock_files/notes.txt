@@ -1,0 +1,4 @@
+Synthetic Notes for Safe Development Testing:
+1. Complete Phase 0 architectural documentation.
+2. Review security and threat model matrices.
+3. Validate sandbox isolation tests.
