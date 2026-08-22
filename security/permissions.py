@@ -179,8 +179,9 @@ class PermissionEngine:
         if session.permission_level == PermissionLevel.LOCKED:
             return PermissionDecision.DENIED_INSUFFICIENT_LEVEL
 
-        # 2. Check path traversal and whitelist enforcement first
-        if target_resource.startswith("file://") or "/" in target_resource:
+        # 2. Check path traversal and whitelist enforcement for filesystem paths
+        is_web_url = target_resource.startswith(("http://", "https://"))
+        if not is_web_url and (target_resource.startswith("file://") or "/" in target_resource):
             clean_path = target_resource.removeprefix("file://")
             if ".." in clean_path:
                 return PermissionDecision.DENIED_RESOURCE_OUT_OF_BOUNDS

@@ -1,4 +1,4 @@
-"""Deterministic Tool Output Verifier and Content Isolator for Phase 3 and Phase 4.1."""
+"""Deterministic Tool Output Verifier and Content Isolator for Phase 3, Phase 4.1, and Phase 4.2."""
 
 import json
 from typing import Any
@@ -33,13 +33,8 @@ class OutputVerifier:
                         f"Tool '{definition.name}' output missing required field '{field}'."
                     )
 
-        # Special isolation tag for web research content
-        is_web_research = (
-            result.tool_name in ("web_fetch", "web_search")
-            or (definition and definition.capability == ToolCapability.RESEARCH)
-        )
-
-        if is_web_research and result.tool_name == "web_fetch":
+        # Isolation tag for web page fetching
+        if result.tool_name == "web_fetch":
             url_str = result.output_data.get("url", "unknown")
             title_str = result.output_data.get("title", "Untitled")
             content_str = result.output_data.get("content", "")
@@ -49,9 +44,20 @@ class OutputVerifier:
                 f"</untrusted_web_content>"
             )
 
+        # Isolation tag for web search results
+        if result.tool_name == "web_search":
+            query_str = result.output_data.get("query", "")
+            count_int = result.output_data.get("result_count", len(result.output_data.get("results", [])))
+            serialized = json.dumps(result.output_data.get("results", []), indent=2, default=str)
+            return (
+                f"<untrusted_search_results query=\"{query_str}\" count=\"{count_int}\">\n"
+                f"{serialized}\n"
+                f"</untrusted_search_results>"
+            )
+
         serialized = json.dumps(result.output_data, indent=2, default=str)
 
-        # Wrap in untrusted tool output tags for prompt injection defense
+        # Wrap generic tool outputs in untrusted tool output tags
         return (
             f"<untrusted_tool_output tool=\"{result.tool_name}\" status=\"SUCCESS\">\n"
             f"{serialized}\n"

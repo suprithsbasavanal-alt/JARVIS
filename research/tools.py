@@ -1,10 +1,17 @@
-"""Typed Capability Tools for Web Search and Content Retrieval for Phase 4.1."""
+"""Typed Capability Tools for Web Search and Content Retrieval for Phase 4.1 and Phase 4.2."""
 
 from typing import Any
+from urllib.parse import urlparse
 from config.schema import PermissionLevel
 from core.context import SessionContext
 from core.exceptions import MalformedToolRequestError, UnknownParameterError
 from research.fetcher import SafeWebFetcher
+from research.search_provider import (
+    BaseSearchProvider,
+    MockSearchProvider,
+    SearchResultItem,
+)
+from research.ssrf import SSRFGuard
 from research.url_validator import URLValidator
 from tools.base import (
     BaseTool,
@@ -17,15 +24,21 @@ from tools.base import (
 
 
 class WebSearchTool(BaseTool):
-    """Hermetic web search tool querying simulated sandbox search fixtures or web APIs."""
+    """Hermetic web search tool querying typed search providers with SSRF and size bounds."""
 
-    def __init__(self, mock_results: dict[str, list[dict[str, str]]] | None = None) -> None:
+    MAX_QUERY_LENGTH = 500
+
+    def __init__(
+        self,
+        provider: BaseSearchProvider | None = None,
+        mock_results: dict[str, list[dict[str, Any]]] | None = None,
+    ) -> None:
         super().__init__(
             ToolDefinition(
                 tool_id="web_search",
                 name="web_search",
                 description="Performs safe, sandboxed web searches for factual queries.",
-                version="1.0.0",
+                version="1.1.0",
                 capability=ToolCapability.RESEARCH,
                 permission_tier=PermissionLevel.NORMAL,
                 risk_level=RiskLevel.LOW,
@@ -35,8 +48,17 @@ class WebSearchTool(BaseTool):
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Search query keywords"},
-                        "limit": {"type": "integer", "description": "Max results to return (1-10)"},
+                        "query": {
+                            "type": "string",
+                            "description": "Search query keywords (max 500 characters)",
+                            "maxLength": 500,
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max results to return (1-10)",
+                            "minimum": 1,
+                            "maximum": 10,
+                        },
                     },
                     "required": ["query"],
                     "additionalProperties": False,
@@ -52,11 +74,19 @@ class WebSearchTool(BaseTool):
                 },
             )
         )
-        self.mock_results = mock_results or {}
+        if provider:
+            self.provider = provider
+        else:
+            mock_p = MockSearchProvider()
+            if mock_results:
+                for kw, res in mock_results.items():
+                    mock_p.register_fixture(kw, res)
+            self.provider = mock_p
 
-    def register_mock_search(self, query_keyword: str, results: list[dict[str, str]]) -> None:
+    def register_mock_search(self, query_keyword: str, results: list[dict[str, Any]]) -> None:
         """Register canned search results for hermetic sandbox testing."""
-        self.mock_results[query_keyword.lower()] = results
+        if isinstance(self.provider, MockSearchProvider):
+            self.provider.register_fixture(query_keyword, results)
 
     async def execute(self, parameters: dict[str, Any], context: SessionContext) -> ToolResult:
         allowed_keys = {"query", "limit"}
@@ -64,42 +94,64 @@ class WebSearchTool(BaseTool):
             unknown = set(parameters.keys()) - allowed_keys
             raise UnknownParameterError(f"Unknown parameters for web search: {unknown}")
 
-        query = parameters.get("query")
-        if not query or not isinstance(query, str) or not query.strip():
+        raw_query = parameters.get("query")
+        if raw_query is None or not isinstance(raw_query, str):
             raise MalformedToolRequestError("Missing or invalid 'query' parameter.")
 
-        limit = int(parameters.get("limit", 5))
-        clean_query = query.strip()
-        q_lower = clean_query.lower()
+        clean_query = raw_query.strip()
+        if not clean_query:
+            raise MalformedToolRequestError("Search query cannot be empty or whitespace only.")
 
-        # Find matching mock results
-        matching_results: list[dict[str, str]] = []
-        for kw, res_list in self.mock_results.items():
-            if kw in q_lower or q_lower in kw:
-                matching_results.extend(res_list)
+        if len(clean_query) > self.MAX_QUERY_LENGTH:
+            raise MalformedToolRequestError(
+                f"Search query length ({len(clean_query)}) exceeds maximum limit of {self.MAX_QUERY_LENGTH} characters."
+            )
 
-        if not matching_results:
-            # Fallback simulated search result
-            matching_results = [
-                {
-                    "title": f"Information on {clean_query}",
-                    "snippet": f"Overview and verified technical details regarding {clean_query}.",
-                    "url": f"https://en.wikipedia.org/wiki/{clean_query.replace(' ', '_')}",
-                }
-            ]
+        raw_limit = parameters.get("limit", 5)
+        try:
+            limit = int(raw_limit)
+        except (ValueError, TypeError) as err:
+            raise MalformedToolRequestError(f"Invalid limit parameter '{raw_limit}'.") from err
 
-        results = matching_results[:limit]
+        clamped_limit = max(1, min(limit, 10))
 
-        return ToolResult(
-            tool_id=self.definition.tool_id,
-            tool_name=self.definition.name,
-            is_success=True,
-            output_data={
-                "query": clean_query,
-                "result_count": len(results),
-                "results": results,
-            },
-        )
+        try:
+            search_response = await self.provider.search(clean_query, limit=clamped_limit)
+            
+            # Serialize SearchResultItems cleanly into dicts
+            results_dicts: list[dict[str, Any]] = []
+            for item in search_response.results:
+                if isinstance(item, SearchResultItem):
+                    results_dicts.append(item.model_dump())
+                elif isinstance(item, dict):
+                    # Ensure domain and rank are present
+                    norm_url = item.get("url", "")
+                    domain = urlparse(norm_url).hostname or "unknown"
+                    results_dicts.append({
+                        "title": item.get("title", "Untitled"),
+                        "url": norm_url,
+                        "domain": item.get("domain", domain),
+                        "snippet": item.get("snippet", ""),
+                        "rank": item.get("rank", len(results_dicts) + 1),
+                    })
+
+            return ToolResult(
+                tool_id=self.definition.tool_id,
+                tool_name=self.definition.name,
+                is_success=True,
+                output_data={
+                    "query": search_response.query,
+                    "result_count": len(results_dicts),
+                    "results": results_dicts,
+                },
+            )
+        except Exception as err:
+            return ToolResult(
+                tool_id=self.definition.tool_id,
+                tool_name=self.definition.name,
+                is_success=False,
+                error_message=f"Search provider error: {err}",
+            )
 
 
 class WebPageReaderTool(BaseTool):

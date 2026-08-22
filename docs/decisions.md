@@ -18,6 +18,20 @@ This document records the foundational architectural decisions, trade-off analys
 - [ADR-008: Standard AES-256-GCM AEAD Field-Level Encryption and Inverted Index](#adr-008-standard-aes-256-gcm-aead-field-level-encryption-and-inverted-index)
 - [ADR-009: Typed Tool Registry, Process-Isolated Execution Sandbox, and Cryptographic Approval Tokens](#adr-009-typed-tool-registry-process-isolated-execution-sandbox-and-cryptographic-approval-tokens)
 - [ADR-010: Secure Web Research Foundation, SSRF Defense, and Untrusted Web Content Isolation](#adr-010-secure-web-research-foundation-ssrf-defense-and-untrusted-web-content-isolation)
+- [ADR-011: Typed Search Provider Abstraction and Per-Result Security Filtering](#adr-011-typed-search-provider-abstraction-and-per-result-security-filtering)
+
+---
+
+### ADR-011: Typed Search Provider Abstraction and Per-Result Security Filtering
+- **Status**: Accepted
+- **Context**: Search engines can return malicious URLs (file paths, intranet IP addresses, cloud metadata endpoints), prompt injection attacks in snippets, or oversized response payloads.
+- **Decision**: Implement a **Provider-Agnostic Search Architecture (`BaseSearchProvider`)** with input query length limits (500 chars), result count clamping (1-10), **Per-Result URL & SSRF Validation Filtering** dropping private/loopback/metadata destinations, and **Untrusted XML Isolation Wrapping (`<untrusted_search_results>`)**.
+- **Rationale**:
+  1. Prevents poisoned search index attacks from reaching internal infrastructure or triggering local file disclosure.
+  2. Ensures consistent ranking, schema typing, and domain extraction across different search backends.
+  3. Eliminates prompt injection vectors in search results by isolating snippet text from agent instructions.
+- **Consequences**: Adding new live search backends requires implementing `BaseSearchProvider` and conforming to standardized `SearchResultItem` schemas.
+
 
 ---
 
