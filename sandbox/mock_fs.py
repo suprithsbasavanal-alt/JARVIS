@@ -60,3 +60,7 @@ class MockFilesystem:
                 rel = Path(root, fn).relative_to(self.sandbox_root)
                 files.append(str(rel))
         return sorted(files)
+
+
+# Alias for backward compatibility
+MockFileSystem = MockFilesystem

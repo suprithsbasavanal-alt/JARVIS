@@ -111,3 +111,15 @@ This document records the foundational architectural decisions, trade-off analys
   3. Provides sub-millisecond retrieval (<0.1ms) while decoupling storage from future vector database backends (Qdrant/SQLite-VSS).
 - **Consequences**: Key provider interface cleanly abstracts test sandbox keys from future hardware-backed OS Keychain storage.
 
+---
+
+### ADR-009: Typed Tool Registry, Process-Isolated Execution Sandbox, and Cryptographic Approval Tokens
+- **Status**: Accepted
+- **Context**: The LLM must be strictly prohibited from executing arbitrary shell, filesystem, or network commands. All tool executions must be typed, validated, isolated, bounded by timeouts, and sensitive side-effects must require human consent.
+- **Decision**: Implement a **Central Typed Tool Registry** with strict parameter schema validation (disallowing extra properties), a **ProcessSandboxExecutor** with scrubbed environment variables and timeout/size enforcement, **Single-Use Cryptographic Approval Tokens** binding parameters, session, and tool ID via SHA-256 hashes, and **Untrusted XML Tag Isolation (`<untrusted_tool_output>`)** for prompt injection defense.
+- **Rationale**:
+  1. Prevents arbitrary command execution, code execution, and shell injection vulnerabilities.
+  2. Eliminates secret and credential leakage into tool subprocesses by wiping host environment variables.
+  3. Prevents approval token replay, parameter tampering, session hijacking, or cross-tool authorization confusion.
+  4. Neutralizes indirect prompt injection attacks by formatting tool output as untrusted structured data.
+- **Consequences**: Adding new capabilities requires defining explicit Pydantic schemas, permissions, risk levels, and sandbox boundaries.

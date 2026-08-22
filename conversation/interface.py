@@ -33,6 +33,8 @@ class TextConversationInterface:
                 if approved:
                     token = ApprovalToken(
                         card_id=card.card_id,
+                        tool_id=card.tool_id,
+                        session_id=card.session_id,
                         payload_hash=card.payload_hash,
                         signature="simulated-sig",
                     )

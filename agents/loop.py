@@ -1,4 +1,4 @@
-"""The 11-Step Agent Execution Loop Orchestrator with Secure Memory Integration."""
+"""The 11-Step Agent Execution Loop Orchestrator with Process Sandbox and Phase 3 Registry."""
 
 from agents.base import AgentState, BaseAgent
 from agents.planner import TaskPlanner
@@ -10,12 +10,15 @@ from core.exceptions import (
     HumanConfirmationRequiredError,
     MalformedToolRequestError,
     ModelRoutingError,
+    OutputValidationError,
     PermissionDeniedError,
     ProviderUnavailableError,
     SandboxViolationError,
     SecurityError,
     ToolExecutionError,
     ToolNotFoundError,
+    ToolTimeoutError,
+    UnknownParameterError,
     VerificationFailureError,
 )
 from memory.long_term import SensitivityLevel
@@ -27,13 +30,14 @@ from model_routing.schemas import (
     ModelRequest,
     ModelResponse,
 )
+from sandbox.process_executor import ProcessSandboxExecutor
 from security.audit_logger import AuditLogger
 from security.permissions import ApprovalCard, ApprovalToken, PermissionDecision, PermissionEngine
 from tools.registry import ToolRegistry
 
 
 class AgentLoop(BaseAgent):
-    """Deterministic 11-step agent execution pipeline with secure memory gating."""
+    """Deterministic 11-step agent execution pipeline with strict capability validation."""
 
     def __init__(
         self,
@@ -44,6 +48,7 @@ class AgentLoop(BaseAgent):
         audit_logger: AuditLogger,
         task_planner: TaskPlanner | None = None,
         output_verifier: OutputVerifier | None = None,
+        sandbox_executor: ProcessSandboxExecutor | None = None,
     ) -> None:
         self.router = model_router
         self.permission_engine = permission_engine
@@ -52,6 +57,7 @@ class AgentLoop(BaseAgent):
         self.audit = audit_logger
         self.planner = task_planner or TaskPlanner()
         self.verifier = output_verifier or OutputVerifier()
+        self.sandbox_executor = sandbox_executor or ProcessSandboxExecutor()
         self.state = AgentState.IDLE
 
     async def process_turn(
@@ -99,7 +105,6 @@ class AgentLoop(BaseAgent):
                 memory_lines = "\n".join(
                     f"- [{m.category.value}] {m.content}" for m in relevant_memories
                 )
-                # Wrap memory in untrusted data tags for prompt injection defense
                 memory_context_str = (
                     f"\n<untrusted_memory_data source=\"persistent_memory\">\n"
                     f"{memory_lines}\n"
@@ -161,6 +166,18 @@ class AgentLoop(BaseAgent):
 
         # Process Tool Calls
         for tool_call in initial_response.tool_calls:
+            self.audit.log(
+                actor_id=context.device_id,
+                session_id=session_id_str,
+                correlation_id=correlation_id_str,
+                event_type="TOOL_REQUESTED",
+                action_type=tool_call.tool_name,
+                risk_level="NORMAL",
+                target_resource=tool_call.tool_name,
+                parameters=tool_call.arguments,
+                decision="VALIDATING",
+            )
+
             tool = self.tool_registry.get_tool(tool_call.tool_name)
             if not tool:
                 self.state = AgentState.ERROR
@@ -168,7 +185,7 @@ class AgentLoop(BaseAgent):
                     actor_id=context.device_id,
                     session_id=session_id_str,
                     correlation_id=correlation_id_str,
-                    event_type="TOOL_ERROR",
+                    event_type="TOOL_DENIED",
                     action_type="TOOL_LOOKUP",
                     risk_level="NORMAL",
                     target_resource=tool_call.tool_name,
@@ -177,41 +194,75 @@ class AgentLoop(BaseAgent):
                 )
                 raise ToolNotFoundError(f"Requested tool '{tool_call.tool_name}' is not registered.")
 
+            # Validate input arguments strictly
+            try:
+                self.tool_registry.validate_tool_arguments(tool_call.tool_name, tool_call.arguments)
+                self.audit.log(
+                    actor_id=context.device_id,
+                    session_id=session_id_str,
+                    correlation_id=correlation_id_str,
+                    event_type="TOOL_VALIDATED",
+                    action_type=tool.definition.name,
+                    risk_level=tool.definition.risk_level.value,
+                    target_resource=tool.definition.tool_id,
+                    parameters=tool_call.arguments,
+                    decision="SCHEMA_VALID",
+                )
+            except (MalformedToolRequestError, UnknownParameterError) as err:
+                self.state = AgentState.ERROR
+                self.audit.log(
+                    actor_id=context.device_id,
+                    session_id=session_id_str,
+                    correlation_id=correlation_id_str,
+                    event_type="TOOL_DENIED",
+                    action_type=tool.definition.name,
+                    risk_level=tool.definition.risk_level.value,
+                    target_resource=tool.definition.tool_id,
+                    parameters=tool_call.arguments,
+                    decision=f"MALFORMED_ARGS:{err}",
+                )
+                raise err
+
             target_res = str(tool_call.arguments.get("path", tool_call.arguments.get("target", "sandbox/virtual")))
 
             # 6. SAFETY & PERMISSION CHECK
             decision = self.permission_engine.evaluate(
                 session=context,
-                action_name=tool.metadata.name,
-                required_level=tool.metadata.required_permission_level,
-                action_category=tool.metadata.action_category,
+                action_name=tool.definition.name,
+                required_level=tool.definition.permission_tier,
+                action_category=tool.definition.action_category,
                 target_resource=target_res,
                 parameters=tool_call.arguments,
                 approval_token=approval_token,
                 card=approval_card,
+                tool_id=tool.definition.tool_id,
             )
 
             if decision == PermissionDecision.REQUIRES_HUMAN_CONFIRMATION:
                 self.state = AgentState.AWAITING_CONFIRMATION
                 card = ApprovalCard.create(
-                    action_name=tool.metadata.name,
-                    action_category=tool.metadata.action_category,
+                    action_name=tool.definition.name,
+                    action_category=tool.definition.action_category,
                     target_resource=target_res,
                     parameters=tool_call.arguments,
-                    risk_summary=f"Executing {tool.metadata.name} requires explicit human confirmation.",
+                    risk_summary=f"Executing {tool.definition.name} ({tool.definition.risk_level.value} risk) requires human confirmation.",
+                    tool_id=tool.definition.tool_id,
+                    tool_version=tool.definition.version,
+                    session_id=session_id_str,
+                    correlation_id=correlation_id_str,
                 )
                 self.audit.log(
                     actor_id=context.device_id,
                     session_id=session_id_str,
                     correlation_id=correlation_id_str,
-                    event_type="SECURITY_GATE",
-                    action_type=tool.metadata.name,
-                    risk_level=tool.metadata.action_category.value,
+                    event_type="APPROVAL_REQUIRED",
+                    action_type=tool.definition.name,
+                    risk_level=tool.definition.risk_level.value,
                     target_resource=target_res,
                     parameters=tool_call.arguments,
-                    decision="REQUIRES_CONFIRMATION",
+                    decision="CARD_ISSUED",
                 )
-                raise HumanConfirmationRequiredError(tool.metadata.name, card)
+                raise HumanConfirmationRequiredError(tool.definition.name, card)
 
             if decision != PermissionDecision.AUTHORIZED:
                 self.state = AgentState.ERROR
@@ -219,51 +270,106 @@ class AgentLoop(BaseAgent):
                     actor_id=context.device_id,
                     session_id=session_id_str,
                     correlation_id=correlation_id_str,
-                    event_type="SECURITY_BLOCK",
-                    action_type=tool.metadata.name,
-                    risk_level=tool.metadata.action_category.value,
+                    event_type="TOOL_DENIED",
+                    action_type=tool.definition.name,
+                    risk_level=tool.definition.risk_level.value,
                     target_resource=target_res,
                     parameters=tool_call.arguments,
                     decision=f"DENIED:{decision.value}",
                 )
-                raise PermissionDeniedError(f"Permission denied for tool '{tool.metadata.name}': {decision.value}")
+                raise PermissionDeniedError(f"Permission denied for tool '{tool.definition.name}': {decision.value}")
 
-            # 8. EXECUTION (Confined to Sandbox)
+            # If approval token was provided, consume it to prevent replay
+            if approval_token:
+                approval_token.consume()
+                self.audit.log(
+                    actor_id=context.device_id,
+                    session_id=session_id_str,
+                    correlation_id=correlation_id_str,
+                    event_type="APPROVAL_GRANTED",
+                    action_type=tool.definition.name,
+                    risk_level=tool.definition.risk_level.value,
+                    target_resource=target_res,
+                    parameters=tool_call.arguments,
+                    decision="TOKEN_CONSUMED",
+                    approval_token_id=str(approval_token.token_id),
+                )
+
+            # 8. EXECUTION (Within Process Sandbox)
             self.state = AgentState.EXECUTING_TOOL
+            self.audit.log(
+                actor_id=context.device_id,
+                session_id=session_id_str,
+                correlation_id=correlation_id_str,
+                event_type="TOOL_STARTED",
+                action_type=tool.definition.name,
+                risk_level=tool.definition.risk_level.value,
+                target_resource=target_res,
+                parameters=tool_call.arguments,
+                decision="RUNNING",
+            )
+
             try:
-                tool_result = await tool.execute(tool_call.arguments, context)
-            except SandboxViolationError as s_err:
+                tool_result = await self.sandbox_executor.execute_tool(tool, tool_call.arguments, context)
+            except ToolTimeoutError as t_err:
                 self.state = AgentState.ERROR
                 self.audit.log(
                     actor_id=context.device_id,
                     session_id=session_id_str,
                     correlation_id=correlation_id_str,
-                    event_type="SANDBOX_VIOLATION",
-                    action_type=tool.metadata.name,
+                    event_type="TOOL_TIMEOUT",
+                    action_type=tool.definition.name,
+                    risk_level=tool.definition.risk_level.value,
+                    target_resource=target_res,
+                    parameters=tool_call.arguments,
+                    decision="TIMED_OUT",
+                )
+                raise t_err
+            except (SandboxViolationError, OutputValidationError) as sec_err:
+                self.state = AgentState.ERROR
+                self.audit.log(
+                    actor_id=context.device_id,
+                    session_id=session_id_str,
+                    correlation_id=correlation_id_str,
+                    event_type="TOOL_FAILED",
+                    action_type=tool.definition.name,
                     risk_level="HIGH",
                     target_resource=target_res,
                     parameters=tool_call.arguments,
-                    decision="BLOCKED",
+                    decision=f"BLOCKED:{sec_err}",
                 )
-                raise s_err
-            except MalformedToolRequestError as m_err:
+                raise sec_err
+
+            # 9. OUTPUT VALIDATION & VERIFICATION
+            self.state = AgentState.VERIFYING_OUTPUT
+            try:
+                verified_output = self.verifier.verify_tool_result(tool_result, tool.definition)
+            except OutputValidationError as o_err:
                 self.state = AgentState.ERROR
                 self.audit.log(
                     actor_id=context.device_id,
                     session_id=session_id_str,
                     correlation_id=correlation_id_str,
-                    event_type="MALFORMED_TOOL_REQUEST",
-                    action_type=tool.metadata.name,
-                    risk_level="NORMAL",
+                    event_type="OUTPUT_VALIDATION_FAILED",
+                    action_type=tool.definition.name,
+                    risk_level="HIGH",
                     target_resource=target_res,
                     parameters=tool_call.arguments,
-                    decision="REJECTED",
+                    decision=str(o_err),
                 )
-                raise m_err
+                raise o_err
 
-            # 9. VERIFICATION
-            self.state = AgentState.VERIFYING_OUTPUT
-            verified_output = self.verifier.verify_tool_result(tool_result)
+            self.audit.log(
+                actor_id=context.device_id,
+                session_id=session_id_str,
+                correlation_id=correlation_id_str,
+                event_type="TOOL_COMPLETED",
+                action_type=tool.definition.name,
+                risk_level=tool.definition.risk_level.value,
+                target_resource=target_res,
+                parameters={"execution_time_ms": tool_result.execution_time_ms},
+                decision="SUCCESS",
+            )
 
             messages.append(
                 ChatMessage(

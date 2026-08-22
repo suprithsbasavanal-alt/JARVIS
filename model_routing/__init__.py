@@ -7,6 +7,7 @@ from model_routing.schemas import (
     MessageRole,
     ModelRequest,
     ModelResponse,
+    ToolCall,
     ToolCallDefinition,
 )
 
@@ -17,5 +18,6 @@ __all__ = [
     "ModelRequest",
     "ModelResponse",
     "ModelRouter",
+    "ToolCall",
     "ToolCallDefinition",
 ]

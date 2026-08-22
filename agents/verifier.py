@@ -1,26 +1,43 @@
-"""Output Verifier and Post-Execution Sanitizer."""
+"""Deterministic Tool Output Verifier and Content Isolator for Phase 3."""
 
-from security.prompt_guard import PromptGuard
-from security.sanitizer import Sanitizer
-from tools.base import ToolResult
+import json
+from typing import Any
+from core.exceptions import OutputValidationError
+from tools.base import ToolDefinition, ToolResult
 
 
 class OutputVerifier:
-    """Validates tool results against prompt injection and PII leakage before returning to context."""
+    """Validates tool execution output schemas and wraps untrusted output in safety tags."""
 
-    def __init__(self, prompt_guard: PromptGuard | None = None, sanitizer: Sanitizer | None = None) -> None:
-        self.prompt_guard = prompt_guard or PromptGuard()
-        self.sanitizer = sanitizer or Sanitizer()
-
-    def verify_tool_result(self, result: ToolResult) -> str:
-        """Inspect and safely format tool output."""
+    def verify_tool_result(
+        self,
+        result: ToolResult,
+        definition: ToolDefinition | None = None,
+    ) -> str:
+        """Validate output schema and return safe XML-tagged serialized output."""
         if not result.is_success:
-            return f"[Tool Error in {result.tool_name}]: {result.error_message}"
+            err_msg = result.error_message or "Tool execution failed."
+            return (
+                f"<untrusted_tool_output tool=\"{result.tool_name}\" status=\"ERROR\">\n"
+                f"{err_msg}\n"
+                f"</untrusted_tool_output>"
+            )
 
-        raw_str = str(result.output_data)
+        # Validate against output schema if provided
+        if definition and definition.output_schema:
+            schema = definition.output_schema
+            required_fields = schema.get("required", [])
+            for field in required_fields:
+                if field not in result.output_data:
+                    raise OutputValidationError(
+                        f"Tool '{definition.name}' output missing required field '{field}'."
+                    )
 
-        # Check for injection attempts in external tool output
-        self.prompt_guard.inspect(raw_str, source=f"tool_output:{result.tool_name}")
+        serialized = json.dumps(result.output_data, indent=2, default=str)
 
-        # Wrap in untrusted boundaries to neutralize any latent instructions
-        return self.prompt_guard.wrap_untrusted_content(raw_str, source_label=result.tool_name)
+        # Wrap in untrusted tool output tags for prompt injection defense
+        return (
+            f"<untrusted_tool_output tool=\"{result.tool_name}\" status=\"SUCCESS\">\n"
+            f"{serialized}\n"
+            f"</untrusted_tool_output>"
+        )

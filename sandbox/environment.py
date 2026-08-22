@@ -14,6 +14,18 @@ class SandboxEnvironment:
         self.calendar_service = MockCalendarService()
         self.messaging_service = MockMessagingService()
 
+    def read_file(self, path: str) -> str:
+        """Forward file read to mock filesystem."""
+        return self.fs.read_file(path)
+
+    def write_file(self, path: str, content: str) -> None:
+        """Forward file write to mock filesystem."""
+        self.fs.write_file(path, content)
+
+    def list_files(self, directory: str = "") -> list[str]:
+        """Forward file list to mock filesystem."""
+        return self.fs.list_files(directory)
+
     def reset(self) -> None:
         """Reset the sandbox state."""
         self.email_service.sent_emails.clear()

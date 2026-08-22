@@ -56,6 +56,9 @@ class MockCalendarService(CalendarContract):
             data = json.load(f)
             return [CalendarEvent(**item) for item in data]
 
+    # Alias for convenience
+    list_events = list_upcoming_events
+
     async def create_event(self, event: CalendarEvent, approval_token: str) -> str:
         self.created_events.append(event)
         return event.event_id

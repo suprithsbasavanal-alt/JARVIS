@@ -30,6 +30,10 @@ class ToolCallDefinition(BaseModel):
     arguments: dict[str, Any]
 
 
+# Alias for backward compatibility
+ToolCall = ToolCallDefinition
+
+
 class ModelRequest(BaseModel):
     """Standardized model inference request container."""
     request_id: UUID = Field(default_factory=uuid4)
