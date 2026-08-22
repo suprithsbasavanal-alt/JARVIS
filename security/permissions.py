@@ -43,6 +43,7 @@ class ApprovalCard(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at_epoch: float = 0.0
     is_approved: bool = False
+    is_cancelled: bool = False
 
     @classmethod
     def create(
@@ -56,7 +57,7 @@ class ApprovalCard(BaseModel):
         tool_version: str = "1.0.0",
         session_id: str = "default_session",
         correlation_id: str = "default_corr",
-        ttl_seconds: int = 60,
+        ttl_seconds: int = 300,
     ) -> "ApprovalCard":
         """Factory method to construct an approval card with payload hash and expiration."""
         payload_str = json.dumps(parameters, sort_keys=True)
@@ -76,7 +77,12 @@ class ApprovalCard(BaseModel):
             correlation_id=correlation_id,
             expires_at_epoch=expires_at,
             is_approved=False,
+            is_cancelled=False,
         )
+
+    def cancel(self) -> None:
+        """Explicitly cancel approval card, preventing token generation and execution."""
+        self.is_cancelled = True
 
 
 class ApprovalToken(BaseModel):
@@ -84,6 +90,7 @@ class ApprovalToken(BaseModel):
     token_id: UUID = Field(default_factory=uuid4)
     card_id: UUID
     tool_id: str = ""
+    target_resource: str = ""
     session_id: str = "default_session"
     payload_hash: str
     signature: str = "sig_sha256"
@@ -95,10 +102,14 @@ class ApprovalToken(BaseModel):
         card: ApprovalCard,
         current_session_id: str = "",
         current_tool_id: str = "",
+        current_target_resource: str = "",
     ) -> bool:
-        """Strict validation of approval token integrity against approval card and context."""
+        """Strict validation of approval token integrity against approval card and execution context."""
         if self.is_consumed:
             raise ApprovalTokenReplayError("Approval token has already been consumed and cannot be replayed.")
+
+        if card.is_cancelled:
+            raise ApprovalTokenMismatchError("Approval card was cancelled by the user and cannot be authorized.")
 
         if self.card_id != card.card_id:
             raise ApprovalTokenMismatchError("Token card_id does not match approval card.")
@@ -107,10 +118,16 @@ class ApprovalToken(BaseModel):
             raise ApprovalTokenMismatchError("Parameter hash in token does not match approval card.")
 
         if self.tool_id and card.tool_id and self.tool_id != card.tool_id:
-            raise ApprovalTokenMismatchError(f"Token is bound to tool '{self.tool_id}', but action requested '{card.tool_id}'.")
+            raise ApprovalTokenMismatchError(f"Token is bound to tool '{self.tool_id}', but card is '{card.tool_id}'.")
 
         if current_tool_id and self.tool_id and self.tool_id != current_tool_id:
             raise ApprovalTokenMismatchError(f"Token is bound to tool '{self.tool_id}', but executing '{current_tool_id}'.")
+
+        if self.target_resource and card.target_resource and self.target_resource != card.target_resource:
+            raise ApprovalTokenMismatchError(f"Token target '{self.target_resource}' does not match card target '{card.target_resource}'.")
+
+        if current_target_resource and self.target_resource and self.target_resource != current_target_resource:
+            raise ApprovalTokenMismatchError(f"Token target '{self.target_resource}' does not match executing target '{current_target_resource}'.")
 
         if self.session_id and current_session_id and self.session_id != current_session_id:
             raise ApprovalTokenMismatchError("Token is bound to a different session.")
@@ -165,7 +182,6 @@ class PermissionEngine:
         # 2. Check path traversal and whitelist enforcement first
         if target_resource.startswith("file://") or "/" in target_resource:
             clean_path = target_resource.removeprefix("file://")
-            # Prohibit path traversal patterns
             if ".." in clean_path:
                 return PermissionDecision.DENIED_RESOURCE_OUT_OF_BOUNDS
 
@@ -185,6 +201,7 @@ class PermissionEngine:
                     card,
                     current_session_id=str(session.session_id),
                     current_tool_id=tool_id or action_name,
+                    current_target_resource=target_resource,
                 )
             except Exception:
                 return PermissionDecision.REQUIRES_HUMAN_CONFIRMATION

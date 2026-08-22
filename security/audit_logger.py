@@ -50,14 +50,39 @@ class AuditEntry(BaseModel):
 
 
 class AuditLogger:
-    """Tamper-evident audit log manager with hash chain verification."""
+    """Tamper-evident audit log manager with hash chain verification and automated secret redaction."""
 
     GENESIS_HASH = "0000000000000000000000000000000000000000000000000000000000000000"
+    SENSITIVE_FIELD_NAMES: tuple[str, ...] = (
+        "password",
+        "secret",
+        "api_key",
+        "token",
+        "auth",
+        "authorization",
+        "credential",
+        "private_key",
+    )
 
     def __init__(self, log_path: Path | None = None) -> None:
         self.log_path = log_path
         self._entries: list[AuditEntry] = []
         self._last_hash = self.GENESIS_HASH
+
+    def _sanitize_params(self, params: Any) -> Any:
+        """Recursively redact sensitive parameter keys and secret substrings."""
+        if isinstance(params, dict):
+            sanitized: dict[str, Any] = {}
+            for k, v in params.items():
+                k_lower = str(k).lower()
+                if any(s in k_lower for s in self.SENSITIVE_FIELD_NAMES):
+                    sanitized[k] = "[REDACTED]"
+                else:
+                    sanitized[k] = self._sanitize_params(v)
+            return sanitized
+        if isinstance(params, list):
+            return [self._sanitize_params(item) for item in params]
+        return params
 
     def log(
         self,
@@ -72,8 +97,10 @@ class AuditLogger:
         risk_level: str = "NORMAL",
         approval_token_id: str | None = None,
     ) -> AuditEntry:
-        """Record an event into the audit trail."""
+        """Record an event into the audit trail with sanitized parameters."""
         seq = len(self._entries) + 1
+        clean_params = self._sanitize_params(parameters)
+
         entry = AuditEntry(
             sequence_id=seq,
             session_id=session_id,
@@ -83,7 +110,7 @@ class AuditLogger:
             action_type=action_type,
             risk_level=risk_level,
             target_resource=target_resource,
-            parameters=parameters,
+            parameters=clean_params,
             decision=decision,
             approval_token_id=approval_token_id,
             prev_hash=self._last_hash,
