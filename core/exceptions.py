@@ -129,3 +129,38 @@ class OutputValidationError(SecurityError):
 class VerificationFailureError(SecurityError):
     """Raised when post-execution tool verification fails."""
     pass
+
+
+# ==============================================================================
+# Phase 4.1: Secure Web Research Exceptions
+# ==============================================================================
+
+class WebResearchError(JarvisError):
+    """Base exception for web research operations."""
+    pass
+
+
+class URLValidationError(SecurityError, WebResearchError):
+    """Raised when a URL has an invalid scheme, contains userinfo/credentials, or is malformed."""
+    pass
+
+
+class SSRFBlockedError(SecurityError, WebResearchError):
+    """Raised when an address resolves to a private, loopback, link-local, or cloud metadata IP."""
+    pass
+
+
+class RedirectBlockedError(SecurityError, WebResearchError):
+    """Raised when a redirect hop violates SSRF/URL policy or exceeds hop limit."""
+    pass
+
+
+class PayloadSizeExceededError(SecurityError, WebResearchError):
+    """Raised when a fetched web response exceeds the maximum allowed byte limit."""
+    pass
+
+
+class WebFetchTimeoutError(ToolTimeoutError, WebResearchError):
+    """Raised when a web request connection or read timeout expires."""
+    pass
+

@@ -15,6 +15,9 @@ This document records the foundational architectural decisions, trade-off analys
 - [ADR-005: Provider-Agnostic Model Routing Abstraction](#adr-005-provider-agnostic-model-routing-abstraction)
 - [ADR-006: Human-In-The-Loop (HITL) Gatekeeper Architecture](#adr-006-human-in-the-loop-hitl-gatekeeper-architecture)
 - [ADR-007: Inter-Process Communication (IPC) Protocol](#adr-007-inter-process-communication-ipc-protocol)
+- [ADR-008: Standard AES-256-GCM AEAD Field-Level Encryption and Inverted Index](#adr-008-standard-aes-256-gcm-aead-field-level-encryption-and-inverted-index)
+- [ADR-009: Typed Tool Registry, Process-Isolated Execution Sandbox, and Cryptographic Approval Tokens](#adr-009-typed-tool-registry-process-isolated-execution-sandbox-and-cryptographic-approval-tokens)
+- [ADR-010: Secure Web Research Foundation, SSRF Defense, and Untrusted Web Content Isolation](#adr-010-secure-web-research-foundation-ssrf-defense-and-untrusted-web-content-isolation)
 
 ---
 
@@ -123,3 +126,16 @@ This document records the foundational architectural decisions, trade-off analys
   3. Prevents approval token replay, parameter tampering, session hijacking, or cross-tool authorization confusion.
   4. Neutralizes indirect prompt injection attacks by formatting tool output as untrusted structured data.
 - **Consequences**: Adding new capabilities requires defining explicit Pydantic schemas, permissions, risk levels, and sandbox boundaries.
+
+---
+
+### ADR-010: Secure Web Research Foundation, SSRF Defense, and Untrusted Web Content Isolation
+- **Status**: Accepted
+- **Context**: Autonomous web browsing can expose the agent and host system to SSRF attacks (accessing internal IP addresses, cloud metadata services `169.254.169.254`, loopback interfaces), DNS rebinding, infinite redirect loops, oversized payload memory attacks, and indirect prompt injection.
+- **Decision**: Implement a multi-layered **Secure Web Research Engine** featuring strict URL scheme whitelisting (`http`/`https` only), credential userinfo rejection, comprehensive IPv4/IPv6 private & metadata SSRF denylisting with DNS resolution validation, step-by-step redirect inspection (max 3 hops), streaming payload size enforcement (512 KB cap), HTML-to-Markdown normalization with script/style stripping, and untrusted XML content encapsulation (`<untrusted_web_content>`).
+- **Rationale**:
+  1. Prevents exfiltration of local network services, AWS/GCP/Azure instance metadata, and container infrastructure.
+  2. Protects host memory and resources against payload flooding and hanging network streams.
+  3. Eliminates indirect prompt injection attacks by parsing HTML into inert text and tagging it as untrusted data.
+- **Consequences**: Outbound research requests are strictly read-only and bounded; arbitrary socket connections or unverified protocols remain blocked.
+
