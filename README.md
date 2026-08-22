@@ -1,6 +1,6 @@
 # JARVIS — Personal AI Assistant
 
-> **PHASE 1 — SAFE SANDBOX CORE ONLY**
+> **PHASE 2 — SECURE SANDBOX MEMORY ONLY**
 
 JARVIS is a private, security-first personal AI assistant built for **macOS** and **Android**.
 

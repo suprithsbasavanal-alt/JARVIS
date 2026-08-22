@@ -55,10 +55,13 @@ graph TB
 ## 3. Test Execution Commands
 
 ```bash
-# Run all safe Phase 1 test suites (Pure Python 3.12 standard library runner)
+# Run all test suites (Phase 1 Core + Phase 2 Secure Memory, 36 tests)
 python3.12 -m unittest discover -s tests -v
 
-# Run specifically the comprehensive Phase 1 test suite
+# Run specifically the Phase 2 Memory Subsystem test suite
+python3.12 -m unittest tests/test_phase2_memory.py -v
+
+# Run specifically the Phase 1 Core test suite
 python3.12 -m unittest tests/test_phase1_all.py -v
 ```
 

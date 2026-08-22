@@ -1,14 +1,14 @@
 # JARVIS Memory Architecture & Privacy
 
-> **Phase 0 — Safe Development Specification**
+> **PHASE 2 — SECURE SANDBOX MEMORY SPECIFICATION & DESIGN**
 
-This document describes the multi-tier memory architecture, encryption boundaries, retrieval mechanics, user privacy controls, and memory deletion protocols for **JARVIS**.
+This document describes the multi-tier memory architecture, encryption boundaries, retrieval mechanics, user privacy controls, memory versioning, and deletion protocols for **JARVIS**.
 
 ---
 
 ## 1. Memory Tier Overview
 
-JARVIS organizes memory into three strictly separated tiers to balance conversational context, long-term personal knowledge, and cryptographic privacy.
+JARVIS organizes memory into four strictly separated categories to balance conversational context, long-term personal knowledge, and cryptographic privacy.
 
 ```mermaid
 graph TD
@@ -17,106 +17,111 @@ graph TD
         SessionManager <--> WorkingMem["1. Working Memory (RAM)<br/>• Ephemeral session context<br/>• Sliding window / Token budget<br/>• Purged on session reset"]
     end
 
-    subgraph PersistentMemory["Encrypted Local Storage (SQLCipher + Local Vectors)"]
-        SessionManager <--> LongTermMem["2. Long-Term Memory<br/>• Episodic interaction summaries<br/>• User-approved semantic facts<br/>• Project context & preferences"]
+    subgraph PersistentMemory["Encrypted Local Storage (SQLite + Field Encryption)"]
+        SessionManager <--> EpisodicMem["2. Episodic Memory<br/>• Explicitly approved interaction summaries<br/>• Event records"]
+        SessionManager <--> SemanticMem["3. Semantic Memory<br/>• User-approved facts & preferences<br/>• Project context & conventions"]
+        SessionManager <--> SensitiveMem["4. Sensitive Memory<br/>• Elevated protection<br/>• Authenticated Encrypted Envelope"]
     end
 
-    subgraph CryptographicVault["Hardware Keyring / Secure Enclave"]
-        SessionManager <--> SensitiveVault["3. Sensitive Vault<br/>• Hardware-isolated credentials<br/>• Master keys & tokens<br/>• Zero-knowledge to LLMs"]
+    subgraph KeyManagement["Key Separation Provider"]
+        TestKey["TestKeyProvider (Sandbox)"] -.-> SensitiveMem
+        HardwareKey["HardwareKeyProvider (Keychain/Keystore)"] -.-> SensitiveMem
     end
 ```
 
 ---
 
-## 2. Detailed Memory Subsystems
+## 2. Memory Record Structure
 
-### 2.1. Working Memory (Ephemeral / In-RAM)
-- **Lifecycle**: Exists solely in memory during an active conversation session.
-- **Components**:
-  - Raw dialogue turns (user queries, assistant replies).
-  - Scratchpad for multi-step reasoning thoughts.
-  - Active tool call results and intermediate buffers.
-- **Security & Privacy**:
-  - Automatically flushed when the session times out (default: 60 minutes of inactivity) or when the user invokes "Clear session / Start fresh".
-  - Never serialized to disk in plaintext.
+Every persistent unit of knowledge is modeled as an immutable/versioned `MemoryRecord`:
 
-### 2.2. Long-Term Memory (Episodic & Semantic)
-- **Lifecycle**: Persisted locally in an encrypted database (`data/memory.db` via SQLCipher with AES-256-GCM).
-- **Sub-types**:
-  1. **Episodic Memory**: High-level summaries of past conversations, key decisions, and completed tasks.
-  2. **Semantic Knowledge Graph**: Explicit facts and preferences learned over time (e.g., preferred coding styles, project naming conventions).
-- **Indexing & Retrieval**:
-  - Uses local dense vector embeddings (e.g., all-MiniLM-L6-v2 via ONNX / SQLite-VSS) running completely on-device.
-  - Semantic retrieval queries are executed locally without sending memory databases to external embedding APIs.
-- **User-Approved Write Policy**:
-  - The model does not silently write facts to persistent memory without either explicit user confirmation or transparent UI notification with an "Undo" action.
-
-### 2.3. Sensitive Vault (Zero-Knowledge Isolation)
-- **Scope**: Passwords, API tokens, OAuth credentials, and cryptographic keys.
-- **Enforcement**:
-  - **Inaccessible to LLM context**: Model prompts NEVER receive plaintext secrets.
-  - Stored inside the native OS Keyring (macOS Keychain / Android Keystore).
-  - Tools that require authentication receive transient handles or are executed by trusted backend proxies that inject the secret directly at the network transport layer without exposing it to the agent context.
-
----
-
-## 3. Memory Inspection & Transparency
-
-JARVIS adheres to complete transparency regarding what it remembers:
-
-### 3.1. Inspection Interface
-The user can inspect all stored memories via the UI memory dashboard or the CLI:
-
-```bash
-# List all remembered facts by category
-jarvis memory list --category preferences
-
-# Search memory for a specific topic
-jarvis memory search "Python project structure"
-
-# Inspect detailed provenance of a memory item
-jarvis memory inspect <memory_id>
+```python
+class MemoryRecord(BaseModel):
+    memory_id: UUID
+    category: MemoryType             # WORKING, EPISODIC, SEMANTIC, SENSITIVE
+    content: str                     # Plaintext in memory, Encrypted on disk if Sensitive
+    created_at: datetime
+    updated_at: datetime
+    source_session_id: str
+    consent_status: ConsentStatus    # EXPLICIT_APPROVED, MODEL_SUGGESTED, TEMPORARY
+    sensitivity: SensitivityLevel    # NORMAL, SENSITIVE
+    encryption_status: bool
+    retention_policy: RetentionPolicy # PERMANENT, EXPIRE_AFTER_DAYS, SESSION_ONLY
+    retention_days: int
+    version: int                     # Version incremented on update
+    is_active: bool                  # Stale facts deactivated
+    tags: list[str]
 ```
 
-Each memory record stores:
-- `id`: Unique UUID
-- `content`: Plain text summary of the remembered fact
-- `category`: `preference`, `project`, `task`, `fact`
-- `created_at`: Timestamp
-- `source_session_id`: Originating session
-- `confidence_score`: Float value (0.0 - 1.0)
+---
+
+## 3. Application-Level Authenticated Encryption Design
+
+Sensitive records are encrypted using an **Encrypt-then-MAC** envelope construction:
+
+- **Confidentiality**: Counter-mode keystream derived from SHA-256 with a unique 16-byte random cryptographic nonce.
+- **Authenticity / Integrity**: HMAC-SHA256 calculated over `v1 || nonce || ciphertext` using a dedicated authentication key.
+- **Key Separation**: Encryption and authentication keys are derived independently via HKDF/HMAC from the key provider.
+- **Serialized Envelope Format**: `v1:<hex_nonce>:<hex_ciphertext>:<hex_tag>`
+- **Tamper Rejection**: Any modification to the ciphertext or tag raises `TamperedCiphertextError`.
+- **Zero Plaintext on Disk**: Inspecting the raw SQLite file verifies that sensitive content is never stored in plaintext.
 
 ---
 
-## 4. Memory Deletion & "Right to be Forgotten"
+## 4. Explicit Memory Consent Model
 
-JARVIS provides fine-grained, cryptographically sound deletion protocols:
+JARVIS follows a strict **Default-Deny Persistence** policy:
+- **Automatic Persistence is Prohibited**: Model responses and reasoning thoughts are never saved to long-term memory automatically.
+- **Explicit User Instructions**: Commands like `"Remember that my project is called Orion"` create an `EXPLICIT_APPROVED` memory record.
+- **Model Suggestions**: Assistant proposals are marked as `MODEL_SUGGESTED` and stored in an inactive state until the user explicitly confirms them.
 
-```mermaid
-sequenceDiagram
-    participant User as Human Owner (Suprith)
-    participant Core as JARVIS Core
-    participant DB as SQLCipher DB
-    participant Vector as Vector Index
+---
 
-    User->>Core: "Forget everything about Project Alpha"
-    Core->>DB: Soft-match topic 'Project Alpha' & list candidate records
-    Core-->>User: Preview 4 memory items to be purged
-    User->>Core: Confirm deletion
-    Core->>DB: DELETE WHERE id IN (...)
-    Core->>Vector: Purge vector embeddings
-    Core->>DB: Execute VACUUM / Cryptographic Overwrite
-    Core-->>User: "4 memory items permanently erased."
+## 5. Memory Versioning & Conflict Resolution
+
+When a user updates a remembered fact (e.g., from *"I prefer Python"* to *"I prefer Rust"*):
+1. The old record is marked as `is_active = False` (or updated with version increment).
+2. The new record receives `version = old_version + 1`.
+3. The keyword search index updates immediately, preventing stale facts from polluting model prompts.
+
+---
+
+## 6. Sub-Millisecond Retrieval & Prompt Injection Defense
+
+### 6.1. Keyword Memory Index (`memory/indexing.py`)
+- Inverted keyword index over tokens and tags providing sub-millisecond retrieval (<0.1ms).
+- Gated by session permission level:
+  - `LOCKED`: 0 memories retrieved.
+  - `NORMAL`: Only non-sensitive (`NORMAL`) memories retrieved.
+  - `SENSITIVE`: Sensitive memories accessible with elevated permission.
+
+### 6.2. Untrusted Memory Isolation
+Retrieved memories are wrapped in `<untrusted_memory_data>` tags when injected into system prompts:
+```xml
+<untrusted_memory_data source="persistent_memory">
+- [SEMANTIC] User prefers dark mode and JetBrains Mono font.
+</untrusted_memory_data>
 ```
-
-### 4.1. Deletion Commands
-- **Targeted Deletion**: `jarvis memory delete <memory_id>`
-- **Topic Wipe**: `jarvis memory wipe --topic "Project X"`
-- **Total Factory Reset**: `jarvis memory reset --all --confirm` (destroys SQLite database, vector index, and regenerates database encryption keys).
+This isolates adversarial prompt injections inside memory (e.g., `"Ignore safety rules"`) from executing as system instructions.
 
 ---
 
-## 5. Privacy & Data Minimization Constraints
+## 7. Memory Inspection & "Right to be Forgotten"
 
-1. **No Cloud Memory Synching without E2EE**: Persistent memory synced between macOS and Android is encrypted on the client using keys derived from the user's master secret before transmission.
-2. **No Persistent Sensitive Data in Phase 0**: The repository and its test suites operate strictly on synthetic mock data (`sandbox/fixtures/`).
+### 7.1. Inspection APIs
+- `list_all_memories(category, max_sensitivity)`
+- `inspect_memory(memory_id)` (view full provenance, timestamps, version, and tags)
+- `search_memories(query)`
+
+### 7.2. Deletion Guarantees
+- `forget_memory(memory_id)`: Removes record from SQLite store, inverted keyword index, and caches.
+- `forget_by_topic(topic)`: Bulk purges memories matching a topic.
+- `delete_all_memories()`: Factory reset wiping RAM, inverted index, and persistent tables.
+
+---
+
+## 8. Audit Logging Without Plaintext Leakage
+
+All memory operations (`MEMORY_CREATE_EXPLICIT`, `MEMORY_RECALL`, `MEMORY_UPDATE`, `MEMORY_DELETE`) are recorded in the SHA-256 chained audit log.
+- **Audit entries contain only metadata**: Memory ID, category, sensitivity level, timestamp, result status, and session ID.
+- **Plaintext memory contents are strictly omitted** from audit logs to prevent data leakage.

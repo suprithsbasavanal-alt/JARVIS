@@ -10,9 +10,9 @@ This document establishes the official 14-phase development lifecycle for JARVIS
 | Phase | Phase Name | Primary Objective | Safety Gatekeeper / Exit Criteria |
 |---|---|---|---|
 | **Phase 0** | **Architecture + Security** | Project structure, security specs, threat modeling, safe sandbox, mock suites | **COMPLETED & APPROVED** |
-| **Phase 1** | **Safe JARVIS Core** | Core runtime, event bus, context manager, state machine, basic chat loop | **COMPLETED (Hermetic tests pass 100%)** |
-| **Phase 2** | **Memory Subsystem** | Ephemeral context, encrypted SQLite/vector store, memory wipe/redact protocols | **Requires Human Authorization** |
-| **Phase 3** | **Tool Framework** | Typed tool registry, capability enforcement, HITL confirmation gatekeeper | Locked/Normal/Sensitive ACL tests pass; sandbox isolation verified |
+| **Phase 1** | **Safe JARVIS Core** | Core runtime, event bus, context manager, state machine, basic chat loop | **COMPLETED & APPROVED** |
+| **Phase 2** | **Memory Subsystem** | Ephemeral context, encrypted SQLite/vector store, memory wipe/redact protocols | **COMPLETED (Hermetic tests pass 100%)** |
+| **Phase 3** | **Tool Framework** | Typed tool registry, capability enforcement, HITL confirmation gatekeeper | **Requires Human Authorization** |
 | **Phase 4** | **Web & Research Engine** | Sandboxed web search, URL reader, summarizer, citation graph generator | Indirect prompt injection & SSRF defense suite verified |
 | **Phase 5** | **Voice Pipeline** | Offline wake-word ("Hey Jarvis"), local streaming STT, natural TTS synthesis | Zero continuous audio transmission to cloud; offline wake test pass |
 | **Phase 6** | **Proactive Intelligence** | Background ideation, task planning, project recommendations, polite disagreement | Proactivity bounded; zero unsolicited destructive action execution |

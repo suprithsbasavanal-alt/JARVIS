@@ -1,9 +1,9 @@
-"""The 11-Step Agent Execution Loop Orchestrator for Phase 1."""
+"""The 11-Step Agent Execution Loop Orchestrator with Secure Memory Integration."""
 
 from agents.base import AgentState, BaseAgent
 from agents.planner import TaskPlanner
 from agents.verifier import OutputVerifier
-from config.schema import ModelTier
+from config.schema import ModelTier, PermissionLevel
 from conversation.personality import PersonaGovernor
 from core.context import SessionContext
 from core.exceptions import (
@@ -18,6 +18,7 @@ from core.exceptions import (
     ToolNotFoundError,
     VerificationFailureError,
 )
+from memory.long_term import SensitivityLevel
 from memory.manager import MemoryManager
 from model_routing.router import ModelRouter
 from model_routing.schemas import (
@@ -32,7 +33,7 @@ from tools.registry import ToolRegistry
 
 
 class AgentLoop(BaseAgent):
-    """Deterministic 11-step agent execution pipeline."""
+    """Deterministic 11-step agent execution pipeline with secure memory gating."""
 
     def __init__(
         self,
@@ -75,17 +76,35 @@ class AgentLoop(BaseAgent):
                 content="Please provide a query or instruction.",
             )
 
-        # 3. CONTEXT ASSEMBLY & MEMORY RETRIEVAL
+        # 3. CONTEXT ASSEMBLY & MEMORY RETRIEVAL (With Tier & Sensitivity Gating)
         system_prompt = PersonaGovernor.construct_system_prompt(context)
         user_msg = ChatMessage(role=MessageRole.USER, content=normalized_query)
         self.memory.add_working_message(user_msg)
 
-        relevant_memories = await self.memory.recall(normalized_query, limit=3)
         memory_context_str = ""
-        if relevant_memories:
-            memory_context_str = "\nRelevant Memories:\n" + "\n".join(
-                f"- [{m.category.value}] {m.content}" for m in relevant_memories
+        # Access control: LOCKED tier cannot access persistent memory
+        if context.permission_level != PermissionLevel.LOCKED:
+            max_sens = (
+                SensitivityLevel.SENSITIVE
+                if context.permission_level == PermissionLevel.SENSITIVE
+                else SensitivityLevel.NORMAL
             )
+            relevant_memories = await self.memory.recall(
+                normalized_query,
+                max_sensitivity=max_sens,
+                session_id=session_id_str,
+                limit=3,
+            )
+            if relevant_memories:
+                memory_lines = "\n".join(
+                    f"- [{m.category.value}] {m.content}" for m in relevant_memories
+                )
+                # Wrap memory in untrusted data tags for prompt injection defense
+                memory_context_str = (
+                    f"\n<untrusted_memory_data source=\"persistent_memory\">\n"
+                    f"{memory_lines}\n"
+                    f"</untrusted_memory_data>\n"
+                )
 
         messages = [
             ChatMessage(role=MessageRole.SYSTEM, content=system_prompt + memory_context_str),

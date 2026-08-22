@@ -1,18 +1,55 @@
-"""Memory Package for JARVIS."""
+"""Memory Subsystem Package for JARVIS."""
 
-from memory.encryption import MemoryEncryptor, PassthroughMemoryEncryptor
-from memory.long_term import LongTermMemoryItem, MemoryCategory
+from memory.crypto import (
+    AuthenticatedEncryptor,
+    BaseEncryptor,
+    CryptoError,
+    DecryptionError,
+    TamperedCiphertextError,
+)
+from memory.indexing import (
+    EmbeddingProvider,
+    KeywordMemoryIndex,
+    MemoryIndex,
+    MockEmbeddingProvider,
+    MockVectorIndex,
+    VectorIndex,
+)
+from memory.keys import HardwareKeyProvider, KeyProvider, TestKeyProvider
+from memory.long_term import (
+    ConsentStatus,
+    MemoryCategory,
+    MemoryRecord,
+    MemoryType,
+    RetentionPolicy,
+    SensitivityLevel,
+)
 from memory.manager import MemoryManager
-from memory.store import BaseMemoryStore, MockMemoryStore
+from memory.sqlite_store import SQLiteMemoryStore
 from memory.working import WorkingMemory
 
 __all__ = [
-    "BaseMemoryStore",
-    "LongTermMemoryItem",
+    "AuthenticatedEncryptor",
+    "BaseEncryptor",
+    "ConsentStatus",
+    "CryptoError",
+    "DecryptionError",
+    "EmbeddingProvider",
+    "HardwareKeyProvider",
+    "KeyProvider",
+    "KeywordMemoryIndex",
     "MemoryCategory",
-    "MemoryEncryptor",
+    "MemoryIndex",
     "MemoryManager",
-    "MockMemoryStore",
-    "PassthroughMemoryEncryptor",
+    "MemoryRecord",
+    "MemoryType",
+    "MockEmbeddingProvider",
+    "MockVectorIndex",
+    "RetentionPolicy",
+    "SQLiteMemoryStore",
+    "SensitivityLevel",
+    "TamperedCiphertextError",
+    "TestKeyProvider",
+    "VectorIndex",
     "WorkingMemory",
 ]

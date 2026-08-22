@@ -1,6 +1,11 @@
 """Tools Framework Package."""
 
 from tools.base import BaseTool, ToolMetadata, ToolResult
+from tools.memory_tools import (
+    MockMemoryForgetTool,
+    MockMemoryRecallTool,
+    MockMemoryStoreTool,
+)
 from tools.mock_tools import (
     MockCalculatorTool,
     MockCalendarReaderTool,
@@ -18,6 +23,9 @@ __all__ = [
     "MockEmailDraftTool",
     "MockEmailSenderTool",
     "MockFileReaderTool",
+    "MockMemoryForgetTool",
+    "MockMemoryRecallTool",
+    "MockMemoryStoreTool",
     "ToolExecutionPolicy",
     "ToolMetadata",
     "ToolRegistry",
