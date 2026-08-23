@@ -8,9 +8,10 @@ The external integration layer is designed with strict Defense-in-Depth principl
 1. **Isolated Service Adapters**: Each external service implements a strictly typed `BaseServiceAdapter` contract.
 2. **Explicit Capability Manifests**: Services declare granular capabilities (`READ`, `SEARCH`, `CREATE`, `UPDATE`, `DELETE`, `SEND`, `EXECUTE`). Adapters can never execute undeclared capabilities.
 3. **HITL Permission Gating**: High-risk capabilities (`SEND`, `DELETE`, `EXECUTE`, `CREATE`, `UPDATE`) strictly require interactive Human-in-the-Loop (`ApprovalCard`) confirmation and issue single-use cryptographic `ApprovalToken` instances.
-4. **Platform-Isolated Credential Boundary**: Credential providers (`BaseCredentialProvider`) isolate OAuth tokens, API keys, and Bot tokens in memory or secure hardware keychains. Plaintext credentials are never exposed via status endpoints, metadata dictionaries, string representations, or audit logs.
+4. **Platform-Isolated Credential Boundary**: Credential providers (`SecureCredentialManager`, `BaseSecureStorage`) isolate OAuth2 tokens, API keys, and Bot tokens in memory or OS Keychain. Plaintext credentials are never exposed via status endpoints, metadata dictionaries, string representations, or audit logs.
 5. **Non-Repudiable Chained Audit Trail**: Every service operation, registration, enablement, disablement, and revocation writes to the SHA-256 chained audit logger with automated sensitive parameter scrubbing (`[REDACTED]`).
 6. **Bounded Health Monitoring & Fault Isolation**: Asynchronous health checks, execution timeouts (15s), and deterministic simulation hooks prevent external API latency from hanging the central `AgentLoop`.
+7. **Network Safety by Default**: Real external network access is disabled by default (`SystemConfig.enable_external_services = False`).
 
 ---
 
@@ -30,18 +31,17 @@ The external integration layer is designed with strict Defense-in-Depth principl
 
 ### 2.2 Lifecycle & Status Model (`ServiceStatus`)
 
-- `CONNECTED`: Active, authenticated, and ready for operations.
-- `DISCONNECTED`: Registered but currently offline or disabled.
-- `AUTH_REQUIRED`: Credentials missing, expired, or require OAuth re-authorization.
-- `DEGRADED`: Transient rate-limiting (HTTP 429) or elevated upstream latency.
-- `REVOKED`: Permanently revoked by user; credentials zeroized and execution halted.
-- `ERROR`: Unrecoverable adapter failure or upstream outage (HTTP 503).
+- `CONNECTED`: Active, healthy, credentials valid.
+- `DISCONNECTED`: Configured but currently offline.
+- `AUTH_REQUIRED`: Credentials missing, expired, or require re-auth.
+- `AUTHENTICATING`: In the process of OAuth flow or key verification.
+- `DEGRADED`: Experiencing elevated latency or transient rate-limits (HTTP 429).
+- `REVOKED`: Explicitly revoked/disabled by user; credentials zeroized.
+- `ERROR`: Unrecoverable error state or upstream outage (HTTP 503).
 
 ---
 
 ## 3. Specific Connectors & Adapters (`services/connectors/`)
-
-Phase 9.2 introduces dedicated hermetic connector adapters for primary productivity, communication, and development platforms:
 
 ### 3.1 Connector Matrix
 
@@ -53,41 +53,40 @@ Phase 9.2 introduces dedicated hermetic connector adapters for primary productiv
 | **Slack** | `slack` | `BOT_TOKEN` | `READ`, `SEARCH`, `SEND`, `DELETE` | `read_channel_history`, `get_message`, `search_messages`, `post_message`, `delete_message` |
 | **GitHub** | `github` | `PERSONAL_ACCESS_TOKEN` | `READ`, `SEARCH`, `CREATE`, `UPDATE`, `DELETE` | `list_issues`, `get_issue`, `search_issues`, `create_issue`, `update_issue`, `close_issue` |
 
-### 3.2 Failure Simulation & Error Taxonomy (`ConnectorSimulationConfig`)
-
-To ensure comprehensive testing without external network dependencies, connectors support configurable simulation hooks:
-- `simulate_rate_limit`: Returns `ServiceRateLimitError` (HTTP 429) and transitions connector status to `DEGRADED`.
-- `simulate_outage`: Returns `ServiceOutageError` (HTTP 503) and transitions connector status to `ERROR`.
-- `simulate_timeout`: Returns `ServiceTimeoutError` without hanging.
-- `simulate_auth_failure`: Returns `ServiceAuthenticationError` and transitions status to `AUTH_REQUIRED`.
-
 ---
 
-## 4. Central Service Registry & Execution Sequence
+## 4. Secure Authentication & Credential Lifecycle (`services/credentials/`)
 
-```mermaid
-sequenceDiagram
-    participant User as User / AgentLoop
-    participant Registry as ServiceRegistry
-    participant Bridge as ServicePermissionBridge
-    participant Engine as PermissionEngine
-    participant Connector as ServiceConnector
-    participant Audit as AuditLogger
+Phase 9.3 implements the platform-secure authentication architecture:
 
-    User->>Registry: execute(ServiceRequest)
-    Registry->>Bridge: evaluate_request(request, adapter, session)
-    Bridge->>Bridge: validate_capability(request.capability)
-    alt is SENSITIVE (SEND/CREATE/UPDATE/DELETE) and no ApprovalToken
-        Bridge-->>User: raise HumanConfirmationRequiredError(ApprovalCard)
-    else has valid ApprovalToken
-        Bridge->>Bridge: validate_for(ApprovalCard) & consume()
-        Bridge-->>Registry: ALLOW (AUTHORIZED)
-        Registry->>Connector: execute(request)
-        Connector-->>Registry: ServiceResponse(data)
-        Registry->>Audit: log(SERVICE_OPERATION_EXECUTED)
-        Registry-->>User: ServiceResponse(data)
-    end
 ```
+                  ┌─────────────────────────────────────────────────┐
+                  │           SecureCredentialManager               │
+                  │   (implements BaseCredentialProvider)           │
+                  └────────┬──────────────────────────────┬─────────┘
+                           │                              │
+             ┌─────────────▼────────────┐   ┌─────────────▼────────────┐
+             │   InMemorySecureStorage  │   │   KeychainSecureStorage  │
+             │   (Deterministic Tests)  │   │   (macOS Hardware Store) │
+             └──────────────────────────┘   └──────────────────────────┘
+```
+
+### 4.1 OAuth 2.0 Security Architecture (`OAuth2LifecycleManager`)
+1. **CSRF State Generation**: Generates 256-bit cryptographically random tokens (`secrets.token_urlsafe(32)`) with a 10-minute TTL.
+2. **Single-Use State Enforcement**: Consumes state token upon first verification, preventing replay attacks.
+3. **Cross-Service Isolation**: State checks verify both token and `service_id`.
+4. **Token Refresh Lifecycle**: Automatic calculation of `expires_at` with a 60-second safety buffer; seamless refresh without exposing secrets.
+5. **Revocation & Purge**: Revoking an adapter removes credentials from storage and invalidates active session tokens.
+
+### 4.2 Service Authentication Matrix
+
+| Service | Protocol | Scopes / Identifier | Storage Format |
+| :--- | :--- | :--- | :--- |
+| **Gmail** | OAuth 2.0 PKCE | `gmail.readonly`, `gmail.send`, `gmail.modify` | `OAuth2Credentials` |
+| **Google Calendar** | OAuth 2.0 PKCE | `calendar.readonly`, `calendar.events` | `OAuth2Credentials` |
+| **Google Drive** | OAuth 2.0 PKCE | `drive.readonly`, `drive.file` | `OAuth2Credentials` |
+| **Slack** | Bot Token | `channels:history`, `chat:write`, `search:read` | `BotTokenCredentials` |
+| **GitHub** | Personal Access Token | `repo`, `read:org`, `issues` | `ApiTokenCredentials` |
 
 ---
 
@@ -98,10 +97,11 @@ sequenceDiagram
 | **Capability Boundaries** | Explicit `validate_capability` checks against declared set | `test_undeclared_capability_rejection_across_connectors` |
 | **HITL Authorization Gate** | `HumanConfirmationRequiredError` on SENSITIVE capabilities without token | `test_gmail_send_and_delete_hitl_enforcement`, `test_calendar_create_update_delete_hitl`, `test_drive_read_and_upload_hitl`, `test_slack_read_and_post_message_hitl`, `test_github_read_and_create_issue_hitl` |
 | **Single-Use Approval Tokens** | Token replay rejection via `ApprovalToken.is_consumed` | `test_token_replay_rejected_across_connectors` |
-| **Credential Isolation** | `BaseCredentialProvider` zeroization and non-disclosure | `test_credential_redaction_in_all_connectors` |
-| **Secret Scrubbing** | Automatic parameter redaction in `AuditLogger` and exceptions | `test_audit_logging_and_secret_scrubbing` |
-| **Fault Isolation & Simulation** | Execution timeouts and failure simulation modes | `test_rate_limiting_simulation`, `test_outage_simulation`, `test_timeout_simulation`, `test_auth_failure_simulation` |
-| **IPC Safe Inspection** | Redacted DTO responses for desktop and network companion | `test_ipc_services_list_status_capabilities`, `test_network_bridge_services_endpoints` |
+| **Credential Isolation** | `SecureCredentialManager` zeroization and non-disclosure | `test_credential_models_redaction_and_expiry`, `test_credential_manager_rotation_and_revocation` |
+| **OAuth2 CSRF Protection** | Single-use 256-bit state tokens with TTL | `test_oauth_authorization_url_and_csrf_state`, `test_oauth_state_expiration_and_mismatch` |
+| **OAuth2 Token Refresh** | Bounded expiration calculation and error isolation | `test_oauth_code_exchange_and_token_refresh`, `test_oauth_refresh_failure_isolation` |
+| **Secret Scrubbing** | Automatic parameter redaction in `AuditLogger` and exceptions | `test_audit_trail_and_ipc_secrecy` |
+| **Network Safety** | `SystemConfig.enable_external_services = False` by default | `test_external_services_disabled_by_default` |
 
 ---
 
@@ -109,4 +109,5 @@ sequenceDiagram
 
 - `tests/test_phase9_1_services.py` (19 automated tests).
 - `tests/test_phase9_2_connectors.py` (15 automated tests).
-- Total repository tests: **311/311 passing 100% (in 1.446s)**.
+- `tests/test_phase9_3_auth.py` (11 automated tests).
+- Total repository tests: **322/322 passing 100% (in 1.409s)**.

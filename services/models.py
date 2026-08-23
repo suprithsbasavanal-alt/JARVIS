@@ -23,6 +23,7 @@ class ServiceStatus(str, Enum):
     CONNECTED = "CONNECTED"          # Active, healthy, credentials valid
     DISCONNECTED = "DISCONNECTED"    # Configured but currently offline
     AUTH_REQUIRED = "AUTH_REQUIRED"  # Credentials missing, expired, or require re-auth
+    AUTHENTICATING = "AUTHENTICATING"# In the process of OAuth flow or key verification
     DEGRADED = "DEGRADED"            # Experiencing elevated latency or transient rate-limits
     REVOKED = "REVOKED"              # Explicitly revoked/disabled by user
     ERROR = "ERROR"                  # Unrecoverable error state

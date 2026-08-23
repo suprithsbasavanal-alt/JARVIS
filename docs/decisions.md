@@ -403,5 +403,23 @@ This document records the foundational architectural decisions, trade-off analys
   3. Prepares a robust abstraction ready for real OAuth2 / credential onboarding in Phase 13.
 - **Consequences**: Connectors are fully tested, fault-isolated, auditable, and secure against privilege escalation and token reuse.
 
+---
+
+### ADR-024: Secure Service Authentication, OAuth2 Lifecycle & Credential Isolation
+- **Status**: Accepted
+- **Context**: Enabling external services (Gmail, Google Calendar, Google Drive, Slack, GitHub) requires a production-ready authentication and credential management subsystem. The system must support OAuth 2.0 PKCE, API tokens, and Bot tokens with zero leakage in logs, exceptions, IPC responses, or audit records, while ensuring tests remain 100% hermetic and external network access is disabled by default.
+- **Decision**: Implement a **Hardware-Backed Secure Credential Subsystem with OAuth2 Lifecycle Management and Network Disabling by Default**:
+  1. *Typed Credential Models (`BaseCredential`)*: Define `OAuth2Credentials`, `ApiTokenCredentials`, `BotTokenCredentials`, and `GenericServiceCredentials` with custom `__repr__` outputting `[REDACTED]` and `to_safe_dict()` exposing zero secret tokens.
+  2. *OS-Secure Storage Abstraction (`BaseSecureStorage`)*: Interface for OS Keychain (`KeychainSecureStorage`) and ephemeral memory storage (`InMemorySecureStorage`) with fail-closed security guarantees against plaintext disk leakage.
+  3. *OAuth2 Lifecycle Manager (`OAuth2LifecycleManager`)*: Implements cryptographic 256-bit single-use CSRF state tokens with a 10-minute TTL, authorization URL generation, code exchange, token expiration calculation with a 60-second buffer, and safe refresh flows.
+  4. *Atomic Rotation and Revocation*: Supports in-place credential rotation and full zeroization on connector revocation.
+  5. *Network Disabled by Default*: `SystemConfig.enable_external_services` defaults to `False`, guaranteeing hermetic test execution and preventing unintentional network egress.
+- **Rationale**:
+  1. Prevents credential harvesting, shoulder surfing, and accidental token exposure across logs and IPC boundaries.
+  2. Protects OAuth authentication against cross-site request forgery and authorization code reuse.
+  3. Preserves deterministic unit testing without requiring real third-party developer accounts or internet connectivity.
+- **Consequences**: Connectors operate securely with full credential lifecycle support and are prepared for user account onboarding in Phase 13.
+
+
 
 

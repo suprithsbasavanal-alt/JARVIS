@@ -30,6 +30,7 @@ class SystemConfig(BaseModel):
     timezone: str = "Asia/Kolkata"
     user_display_name: str = "Suprith"
     formal_salutation: str = "Sir"
+    enable_external_services: bool = False
 
 
 class SecurityConfig(BaseModel):
