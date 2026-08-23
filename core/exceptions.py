@@ -233,4 +233,29 @@ class VoicePermissionDeniedError(PermissionDeniedError, VoiceError):
     pass
 
 
+# ==============================================================================
+# Phase 6 Proactive Intelligence & Reasoning Exceptions
+# ==============================================================================
+
+class ProactiveIntelligenceError(JarvisError):
+    """Base exception for proactive recommendation and reasoning subsystems."""
+    pass
+
+
+class ProjectReviewError(ProactiveIntelligenceError):
+    """Raised when autonomous project review fails or encounters malformed workspace."""
+    pass
+
+
+class PlanGenerationError(ProactiveIntelligenceError):
+    """Raised when structured task or study plan generation fails."""
+    pass
+
+
+class ProactiveActionExecutionBlockedError(SecurityError, ProactiveIntelligenceError):
+    """Raised when an unapproved attempt is made to automatically execute a proactive suggestion without user authorization."""
+    pass
+
+
+
 

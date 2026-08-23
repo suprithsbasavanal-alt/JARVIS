@@ -1,16 +1,51 @@
-"""Intelligence and Reasoning Package."""
+"""Phase 6.2 Proactive Intelligence and Reasoning Package."""
 
-from intelligence.analyzer import DisagreementAssessment, ReasoningAnalyzer
+from intelligence.analyzer import (
+    DisagreementAssessment,
+    DisagreementCategory,
+    ReasoningAnalyzer,
+)
+from intelligence.plan_generator import (
+    PlanDifficulty,
+    PlanGenerator,
+    PlanMilestone,
+    PlanStepItem,
+    PlanType,
+    StructuredPlan,
+)
+from intelligence.project_reviewer import (
+    FindingCategory,
+    FindingSeverity,
+    ProjectFinding,
+    ProjectReviewEngine,
+    ProjectReviewReport,
+)
 from intelligence.suggestions import (
+    InformationalGuard,
     ProactiveSuggestion,
     SuggestionCategory,
     SuggestionEngine,
+    SuggestionPriority,
 )
 
 __all__ = [
     "DisagreementAssessment",
+    "DisagreementCategory",
+    "FindingCategory",
+    "FindingSeverity",
+    "InformationalGuard",
+    "PlanDifficulty",
+    "PlanGenerator",
+    "PlanMilestone",
+    "PlanStepItem",
+    "PlanType",
+    "ProjectFinding",
+    "ProjectReviewEngine",
+    "ProjectReviewReport",
     "ProactiveSuggestion",
     "ReasoningAnalyzer",
+    "StructuredPlan",
     "SuggestionCategory",
     "SuggestionEngine",
+    "SuggestionPriority",
 ]
