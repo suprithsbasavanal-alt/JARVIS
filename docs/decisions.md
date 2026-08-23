@@ -212,3 +212,73 @@ This document records the foundational architectural decisions, trade-off analys
   3. Eliminates indirect prompt injection attacks by parsing HTML into inert text and tagging it as untrusted data.
 - **Consequences**: Outbound research requests are strictly read-only and bounded; arbitrary socket connections or unverified protocols remain blocked.
 
+---
+
+### ADR-011: Pure-Python Document Parsing, Resource Sandboxing, and Citation Preservation
+- **Status**: Accepted
+- **Context**: Autonomous processing of user-provided PDF and Markdown research documents creates risks of indirect prompt injection, memory exhaustion from decompression bombs, arbitrary filesystem path traversal, and fabricated citations.
+- **Decision**: Implement a **Pure-Python PDF & Markdown Parser** with streaming page-by-page tokenization, document size enforcement (10 MB PDF, 2 MB Markdown), extraction timeouts (5s), untrusted XML encapsulation (`<untrusted_document_content>`), and deterministic citation preservation.
+- **Rationale**:
+  1. Prevents host binary vulnerabilities associated with heavy C++ PDF rendering engines.
+  2. Protects against memory exhaustion and infinite loops during PDF stream parsing.
+  3. Guarantees that document text cannot break prompt boundary delimiters or execute hidden prompt injection directives.
+- **Consequences**: Complex multi-column OCR requires downstream OCR plugins; standard textual PDFs and Markdown parse with zero binary dependencies.
+
+---
+
+### ADR-012: Local Streaming Voice Pipeline with Ephemeral Audio Memory
+- **Status**: Accepted
+- **Context**: Voice interaction requires low-latency offline wake-word activation, speech-to-text, and speech synthesis without transmitting audio frames over external networks or creating persistent audio surveillance recordings on disk.
+- **Decision**: Implement an **Offline Streaming Voice Engine** with modular provider interfaces (`LocalWakeWordDetector`, `LocalSTTProvider`, `LocalTTSProvider`), an ephemeral in-memory ring buffer (10s max capacity) that zeroizes audio buffers upon transcription, and strict network prohibition.
+- **Rationale**:
+  1. Preserves privacy by guaranteeing microphone audio is never written to disk or transmitted over the network.
+  2. Ephemeral ring buffer prevents memory growth and eliminates eavesdropping risks.
+  3. Pluggable provider architecture enables drop-in integration with Whisper, Porcupine, Piper, or mock testing engines.
+- **Consequences**: Audio transcription runs locally on CPU/Metal; system logs contain text transcripts only, never raw audio.
+
+---
+
+### ADR-013: Static Project Health Assessment & Informational Proactive Recommendations
+- **Status**: Accepted
+- **Context**: Autonomous code reviews and proactive assistance must assist developers without triggering unauthorized file modifications, unexpected git commits, or unprompted tool actions.
+- **Decision**: Implement `ProjectReviewEngine` with deterministic regex heuristics, structural health scoring (0–100), and `InformationalGuard` that strictly disallows unsolicited tool execution.
+- **Rationale**:
+  1. Provides objective, instant static health metrics across security, testing, architecture, and code quality.
+  2. Ensures proactive suggestions are purely informational advisory signals requiring explicit user initiation to execute.
+- **Consequences**: Static analysis is fast and deterministic; complex inter-procedural taint tracking defers to dedicated SAST tools.
+
+---
+
+### ADR-014: Epistemic Reasoning & Polite Disagreement Engine
+- **Status**: Accepted
+- **Context**: When users propose insecure, flawed, or destructive configurations (e.g., storing plaintext credentials, disabling approval gates, deleting databases without backup), the AI must not passively execute dangerous requests.
+- **Decision**: Implement `ReasoningAnalyzer` to evaluate user propositions against safety principles and generate polite, constructive counter-arguments with safer alternative solutions.
+- **Rationale**:
+  1. Protects the user and environment against catastrophic misconfigurations.
+  2. Maintains a respectful, constructive collaborative tone while upholding safety boundaries.
+- **Consequences**: Epistemic checks occur prior to execution, preventing unsafe actions before confirmation cards are generated.
+
+---
+
+### ADR-015: Centralized Proactive Intelligence Coordination and Rate Limiting
+- **Status**: Accepted
+- **Context**: Multiple proactive triggers (session startup, project opening, epistemic checks, periodic reviews) can flood the user or dialogue context with redundant suggestions.
+- **Decision**: Implement `ProactiveCoordinator` with per-trigger cooldowns, priority threshold filtering, and SHA-256 fingerprint deduplication.
+- **Rationale**:
+  1. Prevents notification spam and cognitive overload.
+  2. Guarantees deterministic evaluation lifecycle with SHA-256 chained audit logs.
+- **Consequences**: Triggers occurring within cooldown windows are safely suppressed without disrupting runtime execution.
+
+---
+
+### ADR-016: Proactive Runtime Wiring, XML Context Sanitization, and Bounded Resource Isolation
+- **Status**: Accepted
+- **Context**: Connecting proactive intelligence to the live `EventBus` and `AgentLoop` requires guarantees against event bus blockage, prompt injection breakout, directory traversal, memory leaks, and unbounded file processing.
+- **Decision**: Implement `ProactiveRuntimeBridge` for asynchronous domain event subscription, enforce **XML entity escaping (`xml.sax.saxutils.escape`)** across all proactive data blocks, implement **per-file size limits (5 MB)** and **workspace root validation (`allowed_roots`)** in `ProjectReviewEngine`, and use a **bounded LRU cache (`OrderedDict`, capacity 1,000)** for suggestion fingerprints.
+- **Rationale**:
+  1. Asynchronous event subscription decouples background observation from critical dialogue turns.
+  2. XML character entity escaping neutralizes malicious attempts to break out of `<proactive_advisory>` system tags.
+  3. Strict file size and workspace boundaries prevent denial-of-service and filesystem traversal during project reviews.
+  4. Bounded fingerprint cache prevents memory leakage over long-running daemon sessions.
+- **Consequences**: Proactive advisory context enters the agent's working context in Step 3 as inert informational data, with full security isolation.
+

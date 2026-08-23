@@ -18,6 +18,7 @@ class SessionContext(BaseModel):
     exec_context: ExecutionContext = ExecutionContext.PRIVATE
     is_user_confirmed_alone: bool = False
     active_whitelist_paths: list[str] = Field(default_factory=lambda: ["sandbox/fixtures/mock_files"])
+    proactive_advisory: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_activity_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

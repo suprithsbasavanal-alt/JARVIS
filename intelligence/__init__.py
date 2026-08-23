@@ -27,6 +27,10 @@ from intelligence.project_reviewer import (
     ProjectReviewEngine,
     ProjectReviewReport,
 )
+from intelligence.runtime_listener import (
+    ProactiveRuntimeBridge,
+    ProactiveRuntimeListener,
+)
 from intelligence.suggestions import (
     InformationalGuard,
     ProactiveSuggestion,
@@ -49,6 +53,8 @@ __all__ = [
     "ProactiveCoordinator",
     "ProactiveDialogueAdvisor",
     "ProactiveEvaluationResult",
+    "ProactiveRuntimeBridge",
+    "ProactiveRuntimeListener",
     "ProactiveSuggestion",
     "ProactiveTrigger",
     "ProjectFinding",

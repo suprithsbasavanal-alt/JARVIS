@@ -66,6 +66,7 @@ class AgentLoop(BaseAgent):
         context: SessionContext,
         approval_token: ApprovalToken | None = None,
         approval_card: ApprovalCard | None = None,
+        proactive_advisory: str | None = None,
     ) -> ModelResponse:
         """Execute complete 11-step turn pipeline with fail-closed error handling."""
         context.touch()
@@ -86,6 +87,11 @@ class AgentLoop(BaseAgent):
         system_prompt = PersonaGovernor.construct_system_prompt(context)
         user_msg = ChatMessage(role=MessageRole.USER, content=normalized_query)
         self.memory.add_working_message(user_msg)
+
+        proactive_context_str = ""
+        effective_advisory = proactive_advisory or getattr(context, "proactive_advisory", None)
+        if effective_advisory:
+            proactive_context_str = f"\n{effective_advisory}\n"
 
         memory_context_str = ""
         # Access control: LOCKED tier cannot access persistent memory
@@ -112,7 +118,7 @@ class AgentLoop(BaseAgent):
                 )
 
         messages = [
-            ChatMessage(role=MessageRole.SYSTEM, content=system_prompt + memory_context_str),
+            ChatMessage(role=MessageRole.SYSTEM, content=system_prompt + proactive_context_str + memory_context_str),
             *self.memory.get_working_messages(),
         ]
 

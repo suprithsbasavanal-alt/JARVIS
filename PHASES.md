@@ -15,7 +15,7 @@ This document establishes the official 14-phase development lifecycle for JARVIS
 | **Phase 3** | **Tool Framework** | Typed tool registry, capability enforcement, HITL confirmation gatekeeper | **COMPLETED & VERIFIED (28 Phase 3 tests pass 100%)** |
 | **Phase 4** | **Web & Research Engine** | Web search, URL reader, PDF/Markdown parsing, citation engine, SSRF/injection shields | **COMPLETED & VERIFIED (56 Phase 4 tests pass 100%, 150 total tests)** |
 | **Phase 5** | **Voice Pipeline** | Offline wake-word ("Hey Jarvis"), local streaming STT, natural TTS synthesis | **COMPLETED & VERIFIED (16 Phase 5 tests pass 100%, 166 total tests)** |
-| **Phase 6** | **Proactive Intelligence** | Autonomous project review, structured planning, coordinator & rate-limited advisory | **COMPLETED & VERIFIED (31 Phase 6 tests pass 100%, 197 total tests)** |
+| **Phase 6** | **Proactive Intelligence** | Autonomous project review, structured planning, coordinator, runtime wiring & resource hardening | **COMPLETED & VERIFIED (45 Phase 6 tests pass 100%, 211 total repository tests)** |
 | **Phase 7** | **macOS Desktop Agent** | Tauri v2 shell, native accessibility bridges, scoped filesystem sandbox | OS permission prompts scoped to explicit user directories |
 | **Phase 8** | **Android Client** | Kotlin / Jetpack Compose companion app, Android Keystore, local notification bridge | Zero-trust mTLS / E2EE device pairing & authentication verified |
 | **Phase 9** | **Integrations Framework** | Sandboxed connectors for Gmail, Google/Apple Calendar, WhatsApp, Telegram | Granular OAuth scopes; explicit confirmation required for message sending |

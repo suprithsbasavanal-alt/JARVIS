@@ -1,7 +1,15 @@
-"""Proactive Dialogue Advisory Integration for Phase 6.3."""
+"""Proactive Dialogue Advisory Integration for Phase 6.3 and 6.4 XML Escaping."""
 
+from xml.sax.saxutils import escape as xml_escape
 from intelligence.analyzer import DisagreementAssessment
 from intelligence.coordinator import ProactiveEvaluationResult
+
+
+def _esc(val: str | None) -> str:
+    """Safely escape XML characters to prevent prompt injection or XML breakout."""
+    if not val:
+        return ""
+    return xml_escape(str(val), entities={'"': "&quot;", "'": "&apos;"})
 
 
 class ProactiveDialogueAdvisor:
@@ -10,9 +18,10 @@ class ProactiveDialogueAdvisor:
     @staticmethod
     def format_system_context(evaluation: ProactiveEvaluationResult) -> str:
         """Format proactive evaluation into an inert XML-tagged data block for LLM system context."""
+        trigger_val = _esc(evaluation.trigger.trigger_type.value)
         lines = [
             "<proactive_advisory>",
-            f'  <metadata trigger="{evaluation.trigger.trigger_type.value}" is_informational_only="true" />',
+            f'  <metadata trigger="{trigger_val}" is_informational_only="true" />',
         ]
 
         if evaluation.review_report:
@@ -27,10 +36,13 @@ class ProactiveDialogueAdvisor:
             lines.append("  <epistemic_observations>")
             for d in evaluation.disagreements:
                 if d.should_disagree:
+                    cat = _esc(d.category.value)
+                    reason = _esc(d.reason)
+                    alt = _esc(d.alternative_suggestion)
                     lines.append(
-                        f'    <disagreement category="{d.category.value}">\n'
-                        f"      <reason>{d.reason}</reason>\n"
-                        f"      <alternative>{d.alternative_suggestion}</alternative>\n"
+                        f'    <disagreement category="{cat}">\n'
+                        f"      <reason>{reason}</reason>\n"
+                        f"      <alternative>{alt}</alternative>\n"
                         f"    </disagreement>"
                     )
             lines.append("  </epistemic_observations>")
@@ -38,10 +50,14 @@ class ProactiveDialogueAdvisor:
         if evaluation.suggestions:
             lines.append("  <recommendations>")
             for s in evaluation.suggestions:
+                cat = _esc(s.category.value)
+                prio = _esc(s.priority.value)
+                title = _esc(s.title)
+                rationale = _esc(s.rationale)
                 lines.append(
-                    f'    <suggestion category="{s.category.value}" priority="{s.priority.value}">\n'
-                    f"      <title>{s.title}</title>\n"
-                    f"      <rationale>{s.rationale}</rationale>\n"
+                    f'    <suggestion category="{cat}" priority="{prio}">\n'
+                    f"      <title>{title}</title>\n"
+                    f"      <rationale>{rationale}</rationale>\n"
                     f"    </suggestion>"
                 )
             lines.append("  </recommendations>")
@@ -49,8 +65,10 @@ class ProactiveDialogueAdvisor:
         if evaluation.generated_plans:
             lines.append("  <plans>")
             for p in evaluation.generated_plans:
+                title = _esc(p.title)
+                ptype = _esc(p.plan_type.value)
                 lines.append(
-                    f'    <plan title="{p.title}" type="{p.plan_type.value}" steps="{len(p.steps)}" />'
+                    f'    <plan title="{title}" type="{ptype}" steps="{len(p.steps)}" />'
                 )
             lines.append("  </plans>")
 

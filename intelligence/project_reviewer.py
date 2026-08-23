@@ -1,4 +1,4 @@
-"""Autonomous Project Review Engine for Phase 6.2."""
+"""Autonomous Project Review Engine for Phase 6.2 and 6.4 Resource Hardening."""
 
 from datetime import datetime, timezone
 from enum import Enum
@@ -91,7 +91,7 @@ class ProjectReviewReport(BaseModel):
 
 
 class ProjectReviewEngine:
-    """Performs static analysis and architectural health reviews on project directories."""
+    """Performs static analysis, architectural health reviews, and resource-bounded scanning on project directories."""
 
     SEVERITY_DEDUCTIONS = {
         FindingSeverity.CRITICAL: 25.0,
@@ -145,22 +145,45 @@ class ProjectReviewEngine:
         ),
     ]
 
-    def __init__(self, sandbox_root: Path | str | None = None) -> None:
+    def __init__(
+        self,
+        sandbox_root: Path | str | None = None,
+        allowed_roots: list[Path | str] | None = None,
+        max_file_size_bytes: int = 5 * 1024 * 1024,
+    ) -> None:
         self.sandbox_root = Path(sandbox_root or "sandbox").resolve()
+        self.allowed_roots = [Path(r).resolve() for r in allowed_roots] if allowed_roots is not None else None
+        self.max_file_size_bytes = max_file_size_bytes
 
     def review_directory(
         self,
         directory_path: str,
         project_name: str = "Sandbox Project",
     ) -> ProjectReviewReport:
-        """Analyze files within directory and return structured ProjectReviewReport."""
-        target_path = Path(directory_path).resolve()
+        """Analyze files within directory and return structured ProjectReviewReport with boundary and size guards."""
+        raw_path = Path(directory_path)
+
+        try:
+            target_path = raw_path.resolve(strict=True)
+        except (FileNotFoundError, RuntimeError):
+            raise ProjectReviewError(f"Target project directory '{directory_path}' does not exist.")
 
         if not target_path.exists():
             raise ProjectReviewError(f"Target project directory '{directory_path}' does not exist.")
 
         if not target_path.is_dir():
             raise ProjectReviewError(f"Target path '{directory_path}' is not a directory.")
+
+        # Workspace boundary enforcement: target path must reside within allowed roots if configured
+        if self.allowed_roots:
+            is_allowed = any(
+                target_path == root or root in target_path.parents
+                for root in self.allowed_roots
+            )
+            if not is_allowed:
+                raise SandboxViolationError(
+                    f"Target directory '{target_path}' is outside authorized workspace roots: {[str(r) for r in self.allowed_roots]}"
+                )
 
         findings: list[ProjectFinding] = []
         files_analyzed = 0
@@ -177,8 +200,45 @@ class ProjectReviewEngine:
                 if "readme" in fn.lower():
                     has_readme = True
 
-                # Only inspect text source files (e.g. .py, .md, .json, .yaml, .txt, .sh)
+                # Check symlink boundary escape
+                if file_p.is_symlink():
+                    try:
+                        resolved_file = file_p.resolve(strict=True)
+                        if target_path not in resolved_file.parents and resolved_file != target_path:
+                            findings.append(
+                                ProjectFinding(
+                                    title="Symlink Escapes Project Boundary",
+                                    category=FindingCategory.SECURITY,
+                                    severity=FindingSeverity.HIGH,
+                                    file_path=rel_path,
+                                    description=f"Symlink '{fn}' points to external location outside project root: {resolved_file}",
+                                    remediation="Remove or re-point the symlink within the approved workspace root.",
+                                )
+                            )
+                            continue
+                    except Exception:
+                        continue
+
+                # Only inspect text source files (e.g. .py, .md, .json, .yaml, .txt, .sh, .js, .ts)
                 if file_p.suffix.lower() in (".py", ".md", ".json", ".yaml", ".yml", ".txt", ".sh", ".js", ".ts"):
+                    # Check per-file maximum size limit to prevent memory exhaustion
+                    try:
+                        file_stat = file_p.stat()
+                        if file_stat.st_size > self.max_file_size_bytes:
+                            findings.append(
+                                ProjectFinding(
+                                    title=f"File Skipped Due to Maximum Size Limit ({file_stat.st_size} bytes > {self.max_file_size_bytes} bytes)",
+                                    category=FindingCategory.PERFORMANCE,
+                                    severity=FindingSeverity.INFO,
+                                    file_path=rel_path,
+                                    description=f"File '{fn}' exceeds the maximum allowed inspection size of {self.max_file_size_bytes} bytes and was safely skipped.",
+                                    remediation="Verify whether large data, database dumps, or logs should be excluded from static review.",
+                                )
+                            )
+                            continue
+                    except Exception:
+                        continue
+
                     files_analyzed += 1
                     try:
                         content = file_p.read_text(encoding="utf-8", errors="ignore")

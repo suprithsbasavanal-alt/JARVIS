@@ -1,5 +1,6 @@
-"""Proactive Intelligence Coordinator for Phase 6.3."""
+"""Proactive Intelligence Coordinator for Phase 6.3 and 6.4 Resource Hardening."""
 
+from collections import OrderedDict
 from datetime import datetime, timezone
 from enum import Enum
 import hashlib
@@ -100,11 +101,12 @@ class ProactiveEvaluationResult(BaseModel):
 
 
 class ProactiveCoordinator:
-    """Central orchestrator managing proactive intelligence, rate limiting, and deduplication."""
+    """Central orchestrator managing proactive intelligence, rate limiting, and bounded deduplication."""
 
     def __init__(
         self,
         default_cooldown_seconds: float = 30.0,
+        max_fingerprint_cache_size: int = 1000,
         audit_logger: AuditLogger | None = None,
         project_reviewer: ProjectReviewEngine | None = None,
         plan_generator: PlanGenerator | None = None,
@@ -112,6 +114,7 @@ class ProactiveCoordinator:
         suggestion_engine: SuggestionEngine | None = None,
     ) -> None:
         self.default_cooldown_seconds = default_cooldown_seconds
+        self.max_fingerprint_cache_size = max_fingerprint_cache_size
         self.audit_logger = audit_logger or AuditLogger()
         self.project_reviewer = project_reviewer or ProjectReviewEngine()
         self.plan_generator = plan_generator or PlanGenerator()
@@ -119,7 +122,8 @@ class ProactiveCoordinator:
         self.suggestion_engine = suggestion_engine or SuggestionEngine()
 
         self._last_trigger_times: dict[TriggerType, float] = {}
-        self._seen_suggestion_fingerprints: set[str] = set()
+        # Bounded LRU/FIFO fingerprint cache to prevent unbounded memory growth
+        self._seen_suggestion_fingerprints: OrderedDict[str, float] = OrderedDict()
 
     def _compute_suggestion_fingerprint(self, suggestion: ProactiveSuggestion) -> str:
         """Compute deterministic SHA-256 fingerprint for recommendation deduplication."""
@@ -182,13 +186,19 @@ class ProactiveCoordinator:
             ctx_suggestions = self.suggestion_engine.generate_project_suggestions(trigger.context_summary)
             collected_suggestions.extend(ctx_suggestions)
 
-        # Deduplicate suggestions across current batch and historical fingerprints
+        # Deduplicate suggestions with bounded fingerprint cache
         filtered_suggestions: list[ProactiveSuggestion] = []
         for s in collected_suggestions:
             fp = self._compute_suggestion_fingerprint(s)
             if fp not in self._seen_suggestion_fingerprints:
-                self._seen_suggestion_fingerprints.add(fp)
+                # Evict oldest entries if capacity reached
+                while len(self._seen_suggestion_fingerprints) >= self.max_fingerprint_cache_size:
+                    self._seen_suggestion_fingerprints.popitem(last=False)
+                self._seen_suggestion_fingerprints[fp] = now
                 filtered_suggestions.append(s)
+            else:
+                # Refresh LRU entry order
+                self._seen_suggestion_fingerprints.move_to_end(fp)
 
         # Apply priority threshold filter
         final_suggestions = self.suggestion_engine.filter_by_priority(
