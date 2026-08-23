@@ -453,6 +453,24 @@ This document records the foundational architectural decisions, trade-off analys
   3. Guarantees the integrity of the tamper-evident audit trail for post-incident analysis.
 - **Consequences**: Platform security is rigorously verified with automated regression testing in CI.
 
+---
+
+### ADR-027: Token Optimization, Response Caching, Local Quantized Inference & Memory Guardrails
+- **Status**: Accepted
+- **Context**: Delivering a sub-second conversational assistant capable of executing on consumer hardware requires optimizing context token budgets, stabilizing system prefixes for hardware KV-cache alignment, caching idempotent responses with sub-10ms latency, executing local quantized GGUF models, and constraining process memory strictly below 2GB RAM.
+- **Decision**: Implement a **Comprehensive Performance & Latency Optimization Layer (`model_routing/optimization/`)**:
+  1. *Token Optimization (`TokenOptimizer`)*: Fast, hermetic token estimation, sliding window dialogue truncation, and deterministic system prompt prefix stabilization for KV-cache prefix reuse.
+  2. *Semantic Response Cache (`SemanticResponseCache`)*: In-memory SHA-256 prompt response cache with sub-10ms retrieval, configurable TTL, and LRU eviction.
+  3. *Local Quantized Model Provider (`LocalQuantizedProvider`)*: Local inference engine supporting GGUF quantizations (`Q4_K_M`, `Q5_K_M`, `Q8_0`, `FP16`), streaming generation, and sub-400ms TTFT SLA.
+  4. *Performance Benchmarking (`PerformanceBenchmarker`)*: Profiles request TTFT, total latency, throughput (TPS), and calculates P50/P90/P99 percentiles.
+  5. *Process Memory Guard (`MemoryGuard`)*: Continuous RSS memory monitoring with proactive compaction and garbage collection at 1536 MB to guarantee the 2048 MB (2 GB) memory ceiling.
+- **Rationale**:
+  1. Achieves sub-400ms TTFT responsiveness on local inference tiers.
+  2. Maximizes hardware KV-cache hit rates through deterministic prompt prefix standardization.
+  3. Guarantees stable long-term background operation on memory-constrained macOS host machines.
+- **Consequences**: Fast, memory-safe, and highly responsive local and routed model execution across all JARVIS tiers.
+
+
 
 
 

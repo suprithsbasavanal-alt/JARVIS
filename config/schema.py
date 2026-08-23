@@ -95,6 +95,22 @@ class VoiceConfig(BaseModel):
     tts_engine: Literal["mock", "piper_local", "avfoundation", "cloud"] = "mock"
 
 
+class PerformanceConfig(BaseModel):
+    """Performance, caching, quantization, and memory constraints for Phase 11."""
+    enable_token_optimization: bool = True
+    enable_response_cache: bool = True
+    cache_ttl_seconds: int = 3600
+    cache_max_entries: int = 1000
+    max_context_tokens: int = 4096
+    sliding_window_turns: int = 10
+    max_ram_mb: int = 2048
+    memory_pressure_threshold_mb: int = 1536
+    target_ttft_ms: int = 400
+    default_quantization: str = "Q4_K_M"
+    n_gpu_layers: int = 0
+    n_threads: int = 4
+
+
 class JarvisConfig(BaseModel):
     """Root configuration container for JARVIS."""
     system: SystemConfig = Field(default_factory=SystemConfig)
@@ -103,3 +119,5 @@ class JarvisConfig(BaseModel):
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
+    performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
+

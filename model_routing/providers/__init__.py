@@ -2,6 +2,12 @@
 
 from model_routing.providers.cloud_provider import CloudModelProvider
 from model_routing.providers.local_provider import LocalModelProvider
+from model_routing.providers.local_quantized_provider import LocalQuantizedProvider
 from model_routing.providers.mock_provider import MockModelProvider
 
-__all__ = ["CloudModelProvider", "LocalModelProvider", "MockModelProvider"]
+__all__ = [
+    "CloudModelProvider",
+    "LocalModelProvider",
+    "LocalQuantizedProvider",
+    "MockModelProvider",
+]
