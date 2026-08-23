@@ -11,14 +11,18 @@ from services.models import (
 )
 
 
+from services.transport.base import BaseHttpTransport
+
+
 class SlackConnector(BaseHermeticConnector):
-    """Hermetic Slack adapter supporting read_channel_history, search_messages, post_message, and delete_message."""
+    """Hermetic & Production-ready Slack adapter supporting read_channel_history, search_messages, post_message, and delete_message."""
 
     def __init__(
         self,
         service_id: str = "slack",
         credential_provider: BaseCredentialProvider | None = None,
         simulation_config: ConnectorSimulationConfig | None = None,
+        transport: BaseHttpTransport | None = None,
     ) -> None:
         metadata = ServiceMetadata(
             service_id=service_id,
@@ -37,6 +41,7 @@ class SlackConnector(BaseHermeticConnector):
             metadata=metadata,
             credential_provider=credential_provider,
             simulation_config=simulation_config,
+            transport=transport,
         )
 
         # Synthetic in-memory channels and messages

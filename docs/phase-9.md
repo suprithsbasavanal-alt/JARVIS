@@ -7,17 +7,49 @@ Phase 9 establishes the secure, capability-bounded, and auditable foundation for
 The external integration layer is designed with strict Defense-in-Depth principles:
 1. **Isolated Service Adapters**: Each external service implements a strictly typed `BaseServiceAdapter` contract.
 2. **Explicit Capability Manifests**: Services declare granular capabilities (`READ`, `SEARCH`, `CREATE`, `UPDATE`, `DELETE`, `SEND`, `EXECUTE`). Adapters can never execute undeclared capabilities.
-3. **HITL Permission Gating**: High-risk capabilities (`SEND`, `DELETE`, `EXECUTE`, `CREATE`, `UPDATE`) strictly require interactive Human-in-the-Loop (`ApprovalCard`) confirmation and issue single-use cryptographic `ApprovalToken` instances.
-4. **Platform-Isolated Credential Boundary**: Credential providers (`SecureCredentialManager`, `BaseSecureStorage`) isolate OAuth2 tokens, API keys, and Bot tokens in memory or OS Keychain. Plaintext credentials are never exposed via status endpoints, metadata dictionaries, string representations, or audit logs.
-5. **Non-Repudiable Chained Audit Trail**: Every service operation, registration, enablement, disablement, and revocation writes to the SHA-256 chained audit logger with automated sensitive parameter scrubbing (`[REDACTED]`).
-6. **Bounded Health Monitoring & Fault Isolation**: Asynchronous health checks, execution timeouts (15s), and deterministic simulation hooks prevent external API latency from hanging the central `AgentLoop`.
-7. **Network Safety by Default**: Real external network access is disabled by default (`SystemConfig.enable_external_services = False`).
+3. **Central Execution Gatekeeper (`ServiceExecutionManager`)**: Every external service request passes through `ServiceExecutionManager`, enforcing connector status, authentication state, emergency stop, capability declarations, PermissionEngine authorization, single-use `ApprovalToken` consumption, and transport safety.
+4. **HITL Permission Gating**: High-risk capabilities (`SEND`, `DELETE`, `EXECUTE`, `CREATE`, `UPDATE`) strictly require interactive Human-in-the-Loop (`ApprovalCard`) confirmation and issue single-use cryptographic `ApprovalToken` instances.
+5. **Idempotency & Duplicate Protection (`IdempotencyManager`)**: Short-lived SHA-256 mutation fingerprints prevent duplicate external actions and accidental retries of state-modifying requests.
+6. **Common Secure HTTP Transport (`SecureHttpTransport`)**: Enforces HTTPS-only, 5 MB request/response payload limits, concurrency limits (10 concurrent requests), exponential backoff with jitter on idempotent methods, HTTP 429 `Retry-After` ceiling handling, and automatic header sanitization (`Authorization`, `X-API-Key`, `Cookie`).
+7. **Platform-Isolated Credential Boundary**: Credential providers (`SecureCredentialManager`, `BaseSecureStorage`) isolate OAuth2 tokens, API keys, and Bot tokens in memory or OS Keychain. Plaintext credentials are never exposed via status endpoints, metadata dictionaries, string representations, or audit logs.
+8. **Non-Repudiable Chained Audit Trail**: Every service operation, registration, enablement, disablement, and revocation writes to the SHA-256 chained audit logger with automated sensitive parameter scrubbing (`[REDACTED]`).
+9. **Network Safety by Default**: Real external network access is disabled by default (`SystemConfig.enable_external_services = False`).
 
 ---
 
-## 2. Service Integration Layer (`services/`)
+## 2. Service Integration Layer Architecture
 
-### 2.1 Capability Model (`services/models.py`)
+```
+AgentLoop
+   │
+   ▼
+ToolRegistry
+   │
+   ▼
+ServiceRegistry
+   │
+   ▼
+ServicePermissionBridge ──► PermissionEngine (HITL ApprovalCard)
+   │
+   ▼
+ApprovalToken Validation & Single-Use Consumption
+   │
+   ▼
+ServiceExecutionManager (Emergency Stop & Revocation Checks)
+   │
+   ├──► IdempotencyManager (Duplicate Mutation Guard)
+   │
+   ├──► SecureCredentialManager (Token Retrieval & Isolation)
+   │
+   └──► SecureHttpTransport / MockHttpTransport (HTTPS, Payload Limits, Concurrency)
+           │
+           ▼
+    External Service API (Gmail, Calendar, Drive, Slack, GitHub)
+```
+
+---
+
+## 3. Capability Model (`services/models.py`)
 
 | Capability | Permission Level | Description | Example Operations |
 | :--- | :--- | :--- | :--- |
@@ -29,21 +61,11 @@ The external integration layer is designed with strict Defense-in-Depth principl
 | `SEND` | `SENSITIVE` | Outbound external transmission (Requires HITL) | `send_email`, `post_message` |
 | `EXECUTE` | `SENSITIVE` | Service-side automation execution (Requires HITL) | `trigger_webhook`, `run_sync` |
 
-### 2.2 Lifecycle & Status Model (`ServiceStatus`)
-
-- `CONNECTED`: Active, healthy, credentials valid.
-- `DISCONNECTED`: Configured but currently offline.
-- `AUTH_REQUIRED`: Credentials missing, expired, or require re-auth.
-- `AUTHENTICATING`: In the process of OAuth flow or key verification.
-- `DEGRADED`: Experiencing elevated latency or transient rate-limits (HTTP 429).
-- `REVOKED`: Explicitly revoked/disabled by user; credentials zeroized.
-- `ERROR`: Unrecoverable error state or upstream outage (HTTP 503).
-
 ---
 
-## 3. Specific Connectors & Adapters (`services/connectors/`)
+## 4. Specific Connectors & Adapters (`services/connectors/`)
 
-### 3.1 Connector Matrix
+### 4.1 Connector Matrix
 
 | Connector | Service ID | Auth Classification | Declared Capabilities | Operations Supported |
 | :--- | :--- | :--- | :--- | :--- |
@@ -55,59 +77,45 @@ The external integration layer is designed with strict Defense-in-Depth principl
 
 ---
 
-## 4. Secure Authentication & Credential Lifecycle (`services/credentials/`)
+## 5. Common Transport & Execution Gate (`services/transport/`, `services/execution/`)
 
-Phase 9.3 implements the platform-secure authentication architecture:
+### 5.1 Transport Security Guarantees (`SecureHttpTransport`)
+- **Scheme Verification**: Rejects any non-HTTPS URL with `InsecureTransportError`.
+- **Payload Bounds**: Enforces hard maximums on request body (5 MB) and response body (5 MB) to prevent denial of service.
+- **Concurrency Bounds**: Bounded by `asyncio.Semaphore(10)`.
+- **Idempotent Retries**: Automatically retries idempotent methods (`GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE`) up to 3 times with exponential backoff and jitter. Non-idempotent `POST` requests are never retried unless an `idempotency_key` is supplied.
+- **Throttling & Backoff**: Respects HTTP 429 `Retry-After` headers up to a 30s ceiling.
+- **Header Scrubbing**: Automatically scrubs `Authorization`, `X-API-Key`, and `Cookie` headers in representations and error traces.
 
-```
-                  ┌─────────────────────────────────────────────────┐
-                  │           SecureCredentialManager               │
-                  │   (implements BaseCredentialProvider)           │
-                  └────────┬──────────────────────────────┬─────────┘
-                           │                              │
-             ┌─────────────▼────────────┐   ┌─────────────▼────────────┐
-             │   InMemorySecureStorage  │   │   KeychainSecureStorage  │
-             │   (Deterministic Tests)  │   │   (macOS Hardware Store) │
-             └──────────────────────────┘   └──────────────────────────┘
-```
-
-### 4.1 OAuth 2.0 Security Architecture (`OAuth2LifecycleManager`)
-1. **CSRF State Generation**: Generates 256-bit cryptographically random tokens (`secrets.token_urlsafe(32)`) with a 10-minute TTL.
-2. **Single-Use State Enforcement**: Consumes state token upon first verification, preventing replay attacks.
-3. **Cross-Service Isolation**: State checks verify both token and `service_id`.
-4. **Token Refresh Lifecycle**: Automatic calculation of `expires_at` with a 60-second safety buffer; seamless refresh without exposing secrets.
-5. **Revocation & Purge**: Revoking an adapter removes credentials from storage and invalidates active session tokens.
-
-### 4.2 Service Authentication Matrix
-
-| Service | Protocol | Scopes / Identifier | Storage Format |
-| :--- | :--- | :--- | :--- |
-| **Gmail** | OAuth 2.0 PKCE | `gmail.readonly`, `gmail.send`, `gmail.modify` | `OAuth2Credentials` |
-| **Google Calendar** | OAuth 2.0 PKCE | `calendar.readonly`, `calendar.events` | `OAuth2Credentials` |
-| **Google Drive** | OAuth 2.0 PKCE | `drive.readonly`, `drive.file` | `OAuth2Credentials` |
-| **Slack** | Bot Token | `channels:history`, `chat:write`, `search:read` | `BotTokenCredentials` |
-| **GitHub** | Personal Access Token | `repo`, `read:org`, `issues` | `ApiTokenCredentials` |
+### 5.2 Idempotency & Duplicate Guard (`IdempotencyManager`)
+- Computes deterministic SHA-256 fingerprint from `service_id`, `operation`, and parameters.
+- Maintains in-memory LRU cache of 1000 items with a 15-minute TTL.
+- Detects concurrent in-flight duplicates and raises `DuplicateExecutionError`.
+- Returns cached responses for completed mutations, eliminating duplicate outbound emails, messages, or issues.
 
 ---
 
-## 5. Security & Invariant Verification Matrix
+## 6. Security & Invariant Verification Matrix
 
-| Subsystem / Invariant | Enforcement Mechanism | Phase 9 Verification |
+| Subsystem / Invariant | Enforcement Mechanism | Verification Test |
 | :--- | :--- | :--- |
-| **Capability Boundaries** | Explicit `validate_capability` checks against declared set | `test_undeclared_capability_rejection_across_connectors` |
-| **HITL Authorization Gate** | `HumanConfirmationRequiredError` on SENSITIVE capabilities without token | `test_gmail_send_and_delete_hitl_enforcement`, `test_calendar_create_update_delete_hitl`, `test_drive_read_and_upload_hitl`, `test_slack_read_and_post_message_hitl`, `test_github_read_and_create_issue_hitl` |
-| **Single-Use Approval Tokens** | Token replay rejection via `ApprovalToken.is_consumed` | `test_token_replay_rejected_across_connectors` |
-| **Credential Isolation** | `SecureCredentialManager` zeroization and non-disclosure | `test_credential_models_redaction_and_expiry`, `test_credential_manager_rotation_and_revocation` |
-| **OAuth2 CSRF Protection** | Single-use 256-bit state tokens with TTL | `test_oauth_authorization_url_and_csrf_state`, `test_oauth_state_expiration_and_mismatch` |
-| **OAuth2 Token Refresh** | Bounded expiration calculation and error isolation | `test_oauth_code_exchange_and_token_refresh`, `test_oauth_refresh_failure_isolation` |
-| **Secret Scrubbing** | Automatic parameter redaction in `AuditLogger` and exceptions | `test_audit_trail_and_ipc_secrecy` |
-| **Network Safety** | `SystemConfig.enable_external_services = False` by default | `test_external_services_disabled_by_default` |
+| **Capability Boundaries** | Explicit `validate_capability` checks against declared set | `test_undeclared_capability_rejected_by_execution_manager` |
+| **HITL Authorization Gate** | `HumanConfirmationRequiredError` on SENSITIVE capabilities without token | `test_execution_manager_mutation_hitl_and_token_consumption` |
+| **Single-Use Approval Tokens** | Token replay rejection via `ApprovalToken.is_consumed` | `test_execution_manager_mutation_hitl_and_token_consumption` |
+| **Emergency Stop** | Immediate fail-closed halt of external execution | `test_execution_manager_emergency_stop_halts_execution` |
+| **Connector Revocation** | Revoking connector blocks subsequent calls | `test_execution_manager_revocation_blocks_execution` |
+| **Idempotency Protection** | Fingerprint caching prevents duplicate mutation | `test_idempotency_prevents_duplicate_mutation` |
+| **Insecure URL Rejection** | Rejects `http://` schemes | `test_insecure_http_url_rejection` |
+| **Payload Size Bounds** | Maximum 5 MB request/response limit | `test_transport_payload_size_limits` |
+| **Secret Scrubbing** | Automatic parameter and header redaction | `test_transport_sensitive_header_redaction`, `test_audit_log_chained_integrity_and_secret_redaction` |
+| **Network Safety** | `SystemConfig.enable_external_services = False` by default | `test_transport_external_services_disabled_check` |
 
 ---
 
-## 6. Automated Test Suites
+## 7. Automated Test Suites
 
 - `tests/test_phase9_1_services.py` (19 automated tests).
 - `tests/test_phase9_2_connectors.py` (15 automated tests).
 - `tests/test_phase9_3_auth.py` (11 automated tests).
-- Total repository tests: **322/322 passing 100% (in 1.409s)**.
+- `tests/test_phase9_4_external_execution.py` (15 automated tests).
+- Total repository tests: **337/337 passing 100% (in 1.418s)**.

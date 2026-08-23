@@ -420,6 +420,24 @@ This document records the foundational architectural decisions, trade-off analys
   3. Preserves deterministic unit testing without requiring real third-party developer accounts or internet connectivity.
 - **Consequences**: Connectors operate securely with full credential lifecycle support and are prepared for user account onboarding in Phase 13.
 
+---
+
+### ADR-025: Controlled External Service Execution, Transport Isolation & Mutation Safety
+- **Status**: Accepted
+- **Context**: Executing live or simulated API requests against external third-party services (Gmail, Google Calendar, Google Drive, Slack, GitHub) poses risks of accidental duplicate mutation, denial-of-service via unbounded payload/memory consumption, credential leakage across logs and exceptions, cleartext network transport, and unauthorized actions bypassing Human-in-the-Loop gating.
+- **Decision**: Implement a **Centralized Service Execution Gate with HTTPS Transport Isolation, Idempotency Guard, and Strict Invariant Enforcement**:
+  1. *Central Execution Gateway (`ServiceExecutionManager`)*: All external operations must pass through `ServiceExecutionManager`. Enforces connector status, authentication validity, capability declaration, PermissionEngine / HITL gating, emergency stop, service revocation, and non-repudiable chained SHA-256 audit logging.
+  2. *Idempotency & Duplicate Protection (`IdempotencyManager`)*: Tracks SHA-256 mutation fingerprints in an in-memory LRU cache with a 15-minute TTL. Concurrent duplicates fail with `DuplicateExecutionError`, and repeated requests return cached completed responses, preventing duplicate emails, messages, or issue creations.
+  3. *Secure HTTP Transport (`SecureHttpTransport`)*: Enforces HTTPS-only URLs (rejects `http://`), 5 MB request and response limits, concurrency control via `asyncio.Semaphore(10)`, and bounded exponential backoff with jitter strictly for idempotent HTTP methods.
+  4. *Automatic Header & Parameter Sanitization*: Automatically scrubs `Authorization`, `X-API-Key`, and `Cookie` headers from error traces, `HttpRequest.__repr__`, and audit records.
+  5. *Fail-Closed Emergency Stop*: An active emergency stop immediately halts all external service execution without network egress.
+- **Rationale**:
+  1. Guarantees that external services cannot be contacted or mutated without passing full security and HITL authorization.
+  2. Protects users against double-sends and unintended external state mutations during transient network failures.
+  3. Prevents credential leaks in system diagnostics, error logs, and audit logs.
+- **Consequences**: Complete external service integration lifecycle is hermetically tested, safely gated, observable, and ready for production operations.
+
+
 
 
 

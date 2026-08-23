@@ -11,14 +11,18 @@ from services.models import (
 )
 
 
+from services.transport.base import BaseHttpTransport
+
+
 class GoogleDriveConnector(BaseHermeticConnector):
-    """Hermetic Google Drive adapter supporting list_files, search_files, upload_file, update_file, and delete_file."""
+    """Hermetic & Production-ready Google Drive adapter supporting list_files, search_files, upload_file, update_file, and delete_file."""
 
     def __init__(
         self,
         service_id: str = "google_drive",
         credential_provider: BaseCredentialProvider | None = None,
         simulation_config: ConnectorSimulationConfig | None = None,
+        transport: BaseHttpTransport | None = None,
     ) -> None:
         metadata = ServiceMetadata(
             service_id=service_id,
@@ -38,6 +42,7 @@ class GoogleDriveConnector(BaseHermeticConnector):
             metadata=metadata,
             credential_provider=credential_provider,
             simulation_config=simulation_config,
+            transport=transport,
         )
 
         # Synthetic in-memory drive files

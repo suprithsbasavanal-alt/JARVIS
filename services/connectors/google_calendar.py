@@ -11,14 +11,18 @@ from services.models import (
 )
 
 
+from services.transport.base import BaseHttpTransport
+
+
 class GoogleCalendarConnector(BaseHermeticConnector):
-    """Hermetic Google Calendar adapter supporting list_events, search_events, create_event, update_event, and delete_event."""
+    """Hermetic & Production-ready Google Calendar adapter supporting list_events, search_events, create_event, update_event, and delete_event."""
 
     def __init__(
         self,
         service_id: str = "google_calendar",
         credential_provider: BaseCredentialProvider | None = None,
         simulation_config: ConnectorSimulationConfig | None = None,
+        transport: BaseHttpTransport | None = None,
     ) -> None:
         metadata = ServiceMetadata(
             service_id=service_id,
@@ -38,6 +42,7 @@ class GoogleCalendarConnector(BaseHermeticConnector):
             metadata=metadata,
             credential_provider=credential_provider,
             simulation_config=simulation_config,
+            transport=transport,
         )
 
         # Synthetic in-memory calendar events

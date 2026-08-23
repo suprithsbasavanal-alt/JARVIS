@@ -11,14 +11,18 @@ from services.models import (
 )
 
 
+from services.transport.base import BaseHttpTransport
+
+
 class GmailConnector(BaseHermeticConnector):
-    """Hermetic Gmail adapter supporting read_inbox, search_emails, create_draft, send_email, and delete_email."""
+    """Hermetic & Production-ready Gmail adapter supporting read_inbox, search_emails, create_draft, send_email, and delete_email."""
 
     def __init__(
         self,
         service_id: str = "gmail",
         credential_provider: BaseCredentialProvider | None = None,
         simulation_config: ConnectorSimulationConfig | None = None,
+        transport: BaseHttpTransport | None = None,
     ) -> None:
         metadata = ServiceMetadata(
             service_id=service_id,
@@ -38,6 +42,7 @@ class GmailConnector(BaseHermeticConnector):
             metadata=metadata,
             credential_provider=credential_provider,
             simulation_config=simulation_config,
+            transport=transport,
         )
 
         # Synthetic in-memory state

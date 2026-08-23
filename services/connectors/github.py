@@ -11,14 +11,18 @@ from services.models import (
 )
 
 
+from services.transport.base import BaseHttpTransport
+
+
 class GitHubConnector(BaseHermeticConnector):
-    """Hermetic GitHub adapter supporting list_issues, search_issues, create_issue, update_issue, and close_issue."""
+    """Hermetic & Production-ready GitHub adapter supporting list_issues, search_issues, create_issue, update_issue, and close_issue."""
 
     def __init__(
         self,
         service_id: str = "github",
         credential_provider: BaseCredentialProvider | None = None,
         simulation_config: ConnectorSimulationConfig | None = None,
+        transport: BaseHttpTransport | None = None,
     ) -> None:
         metadata = ServiceMetadata(
             service_id=service_id,
@@ -38,6 +42,7 @@ class GitHubConnector(BaseHermeticConnector):
             metadata=metadata,
             credential_provider=credential_provider,
             simulation_config=simulation_config,
+            transport=transport,
         )
 
         # Synthetic in-memory repository state

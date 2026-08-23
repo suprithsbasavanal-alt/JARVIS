@@ -41,17 +41,22 @@ class ConnectorSimulationConfig:
     simulated_latency_seconds: float = 0.0
 
 
+from services.transport.base import BaseHttpTransport
+
+
 class BaseHermeticConnector(BaseServiceAdapter):
-    """Base class for Phase 9.2 hermetic service connectors with simulation hooks."""
+    """Base class for Phase 9.2 & 9.4 hermetic service connectors with simulation hooks and transport injection."""
 
     def __init__(
         self,
         metadata: ServiceMetadata,
         credential_provider: BaseCredentialProvider | None = None,
         simulation_config: ConnectorSimulationConfig | None = None,
+        transport: BaseHttpTransport | None = None,
     ) -> None:
         super().__init__(metadata=metadata, credential_provider=credential_provider)
         self.simulation_config = simulation_config or ConnectorSimulationConfig()
+        self.transport = transport
         self._status: ServiceStatus = ServiceStatus.CONNECTED
 
     async def _apply_simulations(self) -> None:
