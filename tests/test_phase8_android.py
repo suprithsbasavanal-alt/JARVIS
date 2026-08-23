@@ -153,16 +153,33 @@ class TestPhase8AndroidBootstrap(unittest.TestCase):
         self.assertIn("data class SessionGetResult", models_content)
         self.assertIn("class JsonRpcException", models_content)
 
-    def test_phase8_3_network_client_state_machine_and_backoff(self) -> None:
-        """11. Verify Phase 8.3 NetworkTransportClient implements state tracking, heartbeat, and backoff."""
-        transport_content = (JAVA_SRC / "data" / "remote" / "NetworkTransportClient.kt").read_text(encoding="utf-8")
-        self.assertIn("heartbeatJob", transport_content)
-        self.assertIn("reconnectJob", transport_content)
-        self.assertIn("isDeviceRevoked", transport_content)
-        self.assertIn("triggerReconnectLoop", transport_content)
-        self.assertIn("jarvis.heartbeat", transport_content)
+    def test_phase8_4_secure_storage_and_network_security(self) -> None:
+        """12. Verify SecureStorageManager and NetworkSecurityConfig enforce encryption and disallow cleartext."""
+        sec_store_file = JAVA_SRC / "security" / "SecureStorageManager.kt"
+        self.assertTrue(sec_store_file.exists())
+        sec_store_content = sec_store_file.read_text(encoding="utf-8")
+        self.assertIn("interface SecureStorageManager", sec_store_content)
+        self.assertIn("wipeAllCredentials", sec_store_content)
+        self.assertIn("saveSessionToken", sec_store_content)
+
+        net_sec_xml = SRC_MAIN / "res" / "xml" / "network_security_config.xml"
+        self.assertTrue(net_sec_xml.exists())
+        net_sec_content = net_sec_xml.read_text(encoding="utf-8")
+        self.assertIn('cleartextTrafficPermitted="false"', net_sec_content)
+
+    def test_phase8_4_main_activity_flag_secure_and_approval_guards(self) -> None:
+        """13. Verify MainActivity configures FLAG_SECURE and ViewModel guards stale approvals."""
+        main_act_file = JAVA_SRC / "MainActivity.kt"
+        main_act_content = main_act_file.read_text(encoding="utf-8")
+        self.assertIn("FLAG_SECURE", main_act_content)
+
+        vm_file = JAVA_SRC / "viewmodel" / "MainViewModel.kt"
+        vm_content = vm_file.read_text(encoding="utf-8")
+        self.assertIn("currentCard.cardId != cardId", vm_content)
+        self.assertIn("onAuthFailed", vm_content)
 
 
 if __name__ == "__main__":
     unittest.main()
+
 

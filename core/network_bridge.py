@@ -478,7 +478,12 @@ class NetworkBridgeServer:
         decision = str(params.get("decision", "DENY")).upper()
 
         if not card_id or card_id not in self._pending_approvals:
-            raise ValueError(f"Pending approval card '{card_id}' not found or already consumed.")
+            return {
+                "status": "DENIED",
+                "session_id": "",
+                "reply": f"Pending approval card '{card_id}' not found, expired, or already consumed.",
+                "tool_executed": False,
+            }
 
         card, session_id = self._pending_approvals.pop(card_id)
         context = self._active_sessions.get(session_id)

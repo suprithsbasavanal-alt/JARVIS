@@ -1,6 +1,7 @@
 package com.jarvis.assistant
 
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -17,6 +18,10 @@ import com.jarvis.assistant.ui.theme.*
 import com.jarvis.assistant.viewmodel.CompanionTab
 import com.jarvis.assistant.viewmodel.MainViewModel
 
+/**
+ * Production-Hardened MainActivity with FLAG_SECURE protection against screenshot/recents leaks,
+ * robust lifecycle state preservation, and Biometric HITL integration.
+ */
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels {
@@ -32,6 +37,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Security Hardening: Prevent UI rendering in task switchers or unauthorized screenshots
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE
+        )
+
         setContent {
             JarvisTheme {
                 MainCompanionApp(viewModel = viewModel)
@@ -126,8 +138,8 @@ fun MainCompanionApp(viewModel: MainViewModel) {
                 )
                 CompanionTab.PLANS -> PlanScreen(
                     plan = activePlan,
-                    onToggleStep = { planId, stepNum, completed ->
-                        viewModel.toggleStep(planId, stepNum, completed)
+                    onToggleStep = { _, stepNum, completed ->
+                        viewModel.togglePlanStep(stepNum, completed)
                     }
                 )
             }
@@ -136,8 +148,8 @@ fun MainCompanionApp(viewModel: MainViewModel) {
             pendingApproval?.let { card ->
                 ApprovalDialog(
                     card = card,
-                    onApprove = { cardId -> viewModel.handleApprovalDecision(cardId, true) },
-                    onDeny = { cardId -> viewModel.handleApprovalDecision(cardId, false) }
+                    onApprove = { cardId -> viewModel.handleApproval(cardId, true) },
+                    onDeny = { cardId -> viewModel.handleApproval(cardId, false) }
                 )
             }
         }

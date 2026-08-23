@@ -25,6 +25,10 @@ enum class CompanionTab {
     PLANS
 }
 
+/**
+ * Production-Hardened MainViewModel managing Android UI state, HITL approvals,
+ * biometric verification, and lifecycle synchronization.
+ */
 class MainViewModel(
     private val repository: JarvisRepository = JarvisRepository(MockJarvisIpcClient()),
     private val biometricAuthManager: BiometricAuthManager? = null
@@ -66,6 +70,9 @@ class MainViewModel(
             repository.connectionState.collect { state ->
                 _connectionState.value = state
                 _isConnected.value = (state == ConnectionState.CONNECTED)
+                if (state == ConnectionState.REVOKED || state == ConnectionState.DISCONNECTED) {
+                    _pendingApproval.value = null
+                }
             }
         }
         viewModelScope.launch {
@@ -95,7 +102,6 @@ class MainViewModel(
             try {
                 _status.value = repository.getStatus()
                 _proactiveAdvisory.value = repository.getLatestAdvisory()
-                // Plan is updated via repository flow
             } catch (e: Exception) {
                 // Fail-closed handling
             }
@@ -119,17 +125,35 @@ class MainViewModel(
             } catch (e: Exception) {
                 _messages.value = _messages.value + MessageUiModel(
                     role = "assistant",
-                    content = "Unable to process query: ${e.message}"
+                    content = "Unable to process query: ${e.message ?: "Network error"}"
                 )
             }
         }
     }
 
     fun handleApproval(cardId: String, approve: Boolean, onAuthFailed: () -> Unit = {}) {
-        if (approve && biometricAuthManager != null) {
-            // In real UI, BiometricPrompt is shown in Activity.
-            // On successful biometric validation, this method completes:
-            submitApprovalInternal(cardId, true)
+        val currentCard = _pendingApproval.value
+        // Guard against stale or mismatched approval card IDs
+        if (currentCard == null || currentCard.cardId != cardId) {
+            _pendingApproval.value = null
+            onAuthFailed()
+            return
+        }
+
+        if (approve && biometricAuthManager != null && biometricAuthManager.canAuthenticate()) {
+            biometricAuthManager.authenticate(
+                title = "Authorize Sensitive Tool Execution",
+                subtitle = "Confirm execution of ${currentCard.toolName}",
+                onSuccess = {
+                    submitApprovalInternal(cardId, true)
+                },
+                onError = { _, _ ->
+                    onAuthFailed()
+                },
+                onFailed = {
+                    onAuthFailed()
+                }
+            )
         } else {
             submitApprovalInternal(cardId, approve)
         }
@@ -146,6 +170,10 @@ class MainViewModel(
                 )
             } catch (e: Exception) {
                 _pendingApproval.value = null
+                _messages.value = _messages.value + MessageUiModel(
+                    role = "assistant",
+                    content = "Approval submission failed: ${e.message ?: "Network error"}"
+                )
             }
         }
     }
@@ -162,16 +190,27 @@ class MainViewModel(
 
     fun triggerEmergencyStop() {
         viewModelScope.launch {
+            _pendingApproval.value = null
             try {
                 val stopRes = repository.triggerEmergencyStop()
-                _pendingApproval.value = null
                 _messages.value = _messages.value + MessageUiModel(
                     role = "assistant",
                     content = "[EMERGENCY STOP TRIGGERED] All active operations and tokens revoked."
                 )
                 refreshAll()
             } catch (e: Exception) {
+                _messages.value = _messages.value + MessageUiModel(
+                    role = "assistant",
+                    content = "[EMERGENCY STOP LOCAL FAIL-CLOSED] Approvals cleared locally."
+                )
             }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        viewModelScope.launch {
+            repository.disconnect()
         }
     }
 }

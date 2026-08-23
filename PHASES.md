@@ -17,7 +17,7 @@ This document establishes the official 14-phase development lifecycle for JARVIS
 | **Phase 5** | **Voice Pipeline** | Offline wake-word ("Hey Jarvis"), local streaming STT, natural TTS synthesis | **COMPLETED & VERIFIED (16 Phase 5 tests pass 100%, 166 total tests)** |
 | **Phase 6** | **Proactive Intelligence** | Autonomous project review, structured planning, coordinator, runtime wiring & resource hardening | **COMPLETED & VERIFIED (45 Phase 6 tests pass 100%, 211 total repository tests)** |
 | **Phase 7** | **macOS Desktop Agent** | Tauri v2 shell, native accessibility bridges, scoped filesystem sandbox | **COMPLETED & VERIFIED (18 Phase 7 tests pass 100%, 229 total tests)** |
-| **Phase 8** | **Android Client** | Kotlin / Jetpack Compose companion app, Android Keystore, local network transport, hardware pairing & live session lifecycle | **Phase 8.1, 8.2 & 8.3 COMPLETED & VERIFIED (40 Phase 8 tests pass 100%, 269 total tests)** |
+| **Phase 8** | **Android Client** | Kotlin / Jetpack Compose companion app, Android Keystore, local network transport, hardware pairing & production hardening | **COMPLETED & VERIFIED (47 Phase 8 tests pass 100%, 277 total tests)** |
 | **Phase 9** | **Integrations Framework** | Sandboxed connectors for Gmail, Google/Apple Calendar, WhatsApp, Telegram | Granular OAuth scopes; explicit confirmation required for message sending |
 | **Phase 10** | **Security & Penetration Testing**| Comprehensive red-teaming, prompt injection fuzzing, privilege escalation tests | Zero high/critical vulnerabilities; audit logging non-repudiable |
 | **Phase 11** | **Performance & Latency Tuning** | Sub-second latency optimization, token caching, memory footprint minimization | Local inference latency < 400ms TTFT; RAM footprint < 2GB |
@@ -61,11 +61,12 @@ This document establishes the official 14-phase development lifecycle for JARVIS
 - **Scope**: Build Tauri v2 macOS application shell with Stitch-designed UI, system tray integration, keyboard shortcuts, and native AppleScript/Accessibility bridges.
 - **Constraints**: User-specified folder access only; strict macOS entitlements; Unix Domain Socket (`0700`) JSON-RPC bridge; interactive HITL approval modal; purely informational proactive advisories.
 
-### Phase 8 — Android Companion Client [Phase 8.1, 8.2 & 8.3 COMPLETE]
+### Phase 8 — Android Companion Client [COMPLETED]
 - **Scope**: Develop native Kotlin Android client with Jetpack Compose UI, Android Keystore encryption, and secure local network sync.
 - **Phase 8.1 Deliverables**: Project scaffolding, Gradle & AndroidX dependencies, JSON-RPC 2.0 DTO contracts, in-memory mock client, Keystore/Biometric security managers, Stitch Aether HUD mobile UI components, and automated test suite.
 - **Phase 8.2 Deliverables**: Dedicated authenticated local network transport bridge (`NetworkBridgeServer`), hardware-backed asymmetric device pairing (`DevicePairingRegistry`), challenge-response authentication with 60s TTL and replay protection, and device revocation lifecycle.
 - **Phase 8.3 Deliverables**: End-to-end live JARVIS session lifecycle, connection state machine (`DISCONNECTED` to `ERROR`), periodic authenticated heartbeat (`jarvis.heartbeat`), bounded exponential backoff auto-reconnect, request-response correlation, and fail-closed secret isolation.
+- **Phase 8.4 Deliverables**: Production hardening, `SecureStorageManager` encrypted credential persistence and wipe paths, `FLAG_SECURE` window screenshot shielding, `network_security_config.xml` cleartext prohibition, socket timeouts & 5 MB payload bounds, stale approval rejection, and biometric HITL authorization.
 - **Constraints**: End-to-end encrypted local pairing only. Informational-only proactive invariant strictly preserved on mobile. HITL authorization strictly enforced for sensitive tools across network boundaries. Direct Unix Domain Socket exposure prohibited.
 
 ### Phase 9 — Service Integrations

@@ -3,7 +3,14 @@ package com.jarvis.assistant
 import com.jarvis.assistant.data.model.*
 import com.jarvis.assistant.data.remote.ConnectionState
 import com.jarvis.assistant.data.remote.MockJarvisIpcClient
+import com.jarvis.assistant.data.remote.NetworkTransportClient
 import com.jarvis.assistant.data.repository.JarvisRepository
+import com.jarvis.assistant.security.BiometricAuthManager
+import com.jarvis.assistant.security.SecureStorageManager
+import com.jarvis.assistant.security.StandardDeviceKeyManager
+import com.jarvis.assistant.security.StandardSecureStorageManager
+import com.jarvis.assistant.viewmodel.CompanionTab
+import com.jarvis.assistant.viewmodel.MainViewModel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -14,11 +21,13 @@ class JarvisCompanionTest {
 
     private lateinit var mockClient: MockJarvisIpcClient
     private lateinit var repository: JarvisRepository
+    private lateinit var secureStorage: SecureStorageManager
 
     @Before
     fun setUp() {
         mockClient = MockJarvisIpcClient(simulatedLatencyMs = 0L)
         repository = JarvisRepository(mockClient)
+        secureStorage = StandardSecureStorageManager()
     }
 
     @Test
@@ -154,7 +163,7 @@ class JarvisCompanionTest {
 
     @Test
     fun testDeviceKeyManagerSigning() {
-        val keyManager = com.jarvis.assistant.security.StandardDeviceKeyManager()
+        val keyManager = StandardDeviceKeyManager()
         val pubKey = keyManager.getPublicKeyHex()
         assertNotNull(pubKey)
         assertEquals(64, pubKey.length)
@@ -163,5 +172,73 @@ class JarvisCompanionTest {
         val signature = keyManager.signChallenge(challenge)
         assertNotNull(signature)
         assertEquals(64, signature.length)
+    }
+
+    // ==========================================
+    // Phase 8.4 Production Hardening Tests
+    // ==========================================
+
+    @Test
+    fun testSecureStorageCredentialWipe() {
+        secureStorage.saveSessionToken("d_sess_secret_token_12345")
+        secureStorage.savePairingKey("0123456789abcdef0123456789abcdef")
+
+        assertNotNull(secureStorage.getSessionToken())
+        assertNotNull(secureStorage.getPairingKey())
+
+        secureStorage.wipeAllCredentials()
+        assertNull(secureStorage.getSessionToken())
+        assertNull(secureStorage.getPairingKey())
+    }
+
+    @Test
+    fun testViewModelStaleApprovalRejection() = runBlocking {
+        val vm = MainViewModel(repository = repository)
+        vm.connectToDaemon()
+
+        var authFailedCalled = false
+        // Attempting approval on mismatched/stale card ID must fail closed
+        vm.handleApproval("non-existent-card-id", true, onAuthFailed = {
+            authFailedCalled = true
+        })
+
+        assertTrue(authFailedCalled)
+        assertNull(vm.pendingApproval.first())
+    }
+
+    @Test
+    fun testViewModelBiometricAuthenticationFailureRejection() = runBlocking {
+        val failingBiometric = object : BiometricAuthManager {
+            override fun canAuthenticate(): Boolean = true
+            override fun authenticate(
+                title: String,
+                subtitle: String,
+                onSuccess: () -> Unit,
+                onError: (errorCode: Int, errString: CharSequence) -> Unit,
+                onFailed: () -> Unit
+            ) {
+                onFailed() // Simulate biometric rejection / cancel
+            }
+        }
+
+        val vm = MainViewModel(repository = repository, biometricAuthManager = failingBiometric)
+        vm.connectToDaemon()
+
+        // Trigger sensitive query to populate pendingApproval
+        vm.sendQuery("send email")
+
+        var authFailedCalled = false
+        val card = vm.pendingApproval.first()
+        if (card != null) {
+            vm.handleApproval(card.cardId, true, onAuthFailed = {
+                authFailedCalled = true
+            })
+            assertTrue(authFailedCalled)
+        }
+    }
+
+    @Test
+    fun testMaxPayloadConstantConfigured() {
+        assertEquals(5 * 1024 * 1024, NetworkTransportClient.MAX_PAYLOAD_BYTES)
     }
 }

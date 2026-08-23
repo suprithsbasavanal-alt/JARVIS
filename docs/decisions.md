@@ -348,3 +348,24 @@ This document records the foundational architectural decisions, trade-off analys
   2. Guarantees that revoked companion devices cannot reconnect or access JARVIS core.
   3. Provides an end-to-end typed, reactive architecture from Android Jetpack Compose UI down to Python `AgentLoop`.
 - **Consequences**: Android companion client functions reliably across local network disconnections while preserving all security invariants.
+
+---
+
+### ADR-021: Android Companion Production Hardening, Lifecycle Safety & Privacy Boundaries
+- **Status**: Accepted
+- **Context**: Moving the Android Companion Client to production readiness requires comprehensive defense-in-depth against Activity lifecycle leaks, background resource consumption, screen recording/task-switcher eavesdropping, stale approval execution, network timeouts, DoS memory exhaustion, and plaintext credential persistence.
+- **Decision**: Implement a full suite of **Production Hardening, Lifecycle Safety, and Privacy Controls**:
+  1. *Encrypted Credential Isolation (`SecureStorageManager`)*: Sensitive credentials and ephemeral session tokens are encrypted via Android Keystore (AES-GCM-256) and never stored in plaintext SharedPreferences, logs, or database records. Full credential zeroization (`wipeAllCredentials()`) executes on device revocation or explicit sign-out.
+  2. *Window Security & Screenshot Shielding*: Enforce `FLAG_SECURE` on `MainActivity` window to block unauthorized screenshots, screen recording malware, and task-switcher snapshot leaks of confidential assistant conversations and approval cards.
+  3. *Network Security Configuration & Cleartext Prohibition*: `network_security_config.xml` strictly enforces `cleartextTrafficPermitted="false"` across base configs and local domain definitions.
+  4. *Socket Timeouts & Frame Bounds*: Configure 10s connection timeout, 15s socket read/write timeouts, and strict 5 MB message size limits to prevent connection hangs and payload memory exhaustion.
+  5. *Concurrency & Pending Request Queue Bounding*: Throttle concurrent network requests via `Semaphore(10)` to prevent unbounded memory queuing.
+  6. *Stale Approval Invalidation & Biometric Confirmation*: `MainViewModel` and `ApprovalDialog` validate card ID matching and prevent approving stale, expired, or non-existent requests. Sensitive actions strictly require biometric validation (`BiometricPrompt`) on supported hardware.
+  7. *Local Fail-Closed Emergency Stop*: Invoking Emergency Stop immediately purges pending approval cards locally in UI state, clears in-flight operations, and notifies the host daemon.
+  8. *Secret Scrubbing in Logs & Exceptions*: Automatically redact session tokens, hex keys, and credential strings from error messages, exceptions, and diagnostic logs.
+- **Rationale**:
+  1. Protects user privacy against mobile spyware, screen scrapers, and background log harvesters.
+  2. Prevents stale approval race conditions and replay attacks across mobile lifecycles.
+  3. Guarantees deterministic, memory-safe, and bounded resource utilization on Android devices.
+- **Consequences**: Android client is fully production-hardened, private, fail-closed, and compliant with enterprise Android security standards.
+

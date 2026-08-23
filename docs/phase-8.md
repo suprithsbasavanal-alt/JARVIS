@@ -168,28 +168,49 @@ The Android client maintains a strict deterministic connection state machine:
   - `maxRetries`: 5 attempts
 - **Replay Protection & Secret Isolation**: Request IDs correlate responses (`response.id == request.id`). Payload cap (5 MB) prevents DoS memory exhaustion. Host secrets and private keys are never transmitted.
 
+## 5. Phase 8.4 — Production Hardening, Lifecycle Safety & Privacy
+
+### 5.1 Defense-in-Depth Hardening Controls
+
+1. **Encrypted Storage & Credential Wipe**:
+   - `SecureStorageManager` encrypts pairing keys and session tokens via Android Keystore (AES-GCM-256).
+   - Zeroization paths execute on `wipeAllCredentials()` upon device revocation.
+2. **Window Security & Screenshot Shielding**:
+   - `MainActivity` applies `FLAG_SECURE` to block unauthorized screenshots and recents snapshot caching.
+3. **Strict Network Configuration & Timeouts**:
+   - `network_security_config.xml` mandates `cleartextTrafficPermitted="false"`.
+   - `NetworkTransportClient` enforces 10s connection timeout, 15s socket read/write timeouts, 5 MB message limits, and throttles concurrency to 10 requests.
+4. **HITL Stale Card Protection & Biometric Enforcement**:
+   - `MainViewModel` and `ApprovalDialog` validate card ID matching and prevent approving stale/expired cards.
+   - Approvals require biometric validation (`BiometricPrompt`) on supported hardware.
+5. **Local Fail-Closed Emergency Stop**:
+   - Emergency Stop purges pending approval cards locally in UI state, halts in-flight operations, and notifies the host bridge.
+
 ---
 
-## 5. Security & Invariant Verification Matrix
+## 6. Security & Invariant Verification Matrix
 
-| Subsystem / Invariant | Enforcement Mechanism | Phase 8.1 Verification | Phase 8.2 Verification | Phase 8.3 Verification |
-| :--- | :--- | :--- | :--- | :--- |
-| **Encrypted Storage** | Android Keystore (`AES/GCM/NoPadding`, 256-bit) | `test_keystore_manager_uses_aes_gcm_256` | Tested | Tested |
-| **Biometric Confirmation**| `BiometricPrompt` with `BIOMETRIC_STRONG` | Tested in `ApprovalDialog.kt` | Tested | Tested |
-| **No Cloud Backup** | `data_extraction_rules.xml` disallows cloud | `test_android_manifest_permissions_and_security` | Verified | Verified |
-| **Informational Proactive**| `is_informational_only = true` immutable | `test_proactive_models_enforce_informational_only` | `test_proactive_and_plan_endpoints_over_network` | `test_proactive_advisory_informational_enforcement` |
-| **Asymmetric Device Pairing**| 6-digit confirmation code & timing-safe equality | Scaffolding | `test_confirm_pairing_success` | Verified in live bridge |
-| **Mutual Authentication** | 32-byte CSPRNG nonces, 60s TTL, replay prevention | Mocked | `test_auth_challenge_generation_and_verification` | `test_conversation_turn_round_trip` |
-| **HITL Authorization Gate** | Sensitive tools require `ApprovalCard` + single-use token | Simulated in mock client | `test_hitl_approval_enforcement_over_network` | `test_hitl_approval_and_denial_flow` |
-| **Emergency Stop** | `jarvis.system.emergency_stop` revokes in-flight authorizations | Tested | `test_emergency_stop_over_network` | `test_emergency_stop_kills_in_flight_approvals` |
-| **State Tracking & Heartbeat** | Periodic `jarvis.heartbeat`, exponential backoff | N/A | N/A | `test_heartbeat_keepalive`, `test_phase8_3_network_client_state_machine_and_backoff` |
-| **Revocation Invalidation** | Immediate session termination on revocation | N/A | `test_device_revocation_over_network_rpc` | `test_revoked_device_rejected` |
+| Subsystem / Invariant | Enforcement Mechanism | Phase 8.1 Verification | Phase 8.2 Verification | Phase 8.3 Verification | Phase 8.4 Hardening |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Encrypted Storage** | Android Keystore (`AES/GCM/NoPadding`, 256-bit) | `test_keystore_manager_uses_aes_gcm_256` | Tested | Tested | `test_secure_storage_and_network_security` |
+| **Screenshot Shielding** | `FLAG_SECURE` window attribute | N/A | N/A | N/A | `test_phase8_4_main_activity_flag_secure` |
+| **Biometric Confirmation**| `BiometricPrompt` with `BIOMETRIC_STRONG` | Tested in `ApprovalDialog.kt` | Tested | Tested | `testViewModelBiometricAuthentication` |
+| **No Cloud Backup** | `data_extraction_rules.xml` disallows cloud | `test_android_manifest_permissions_and_security` | Verified | Verified | Verified |
+| **Informational Proactive**| `is_informational_only = true` immutable | `test_proactive_models_enforce_informational_only` | Tested | Tested | Tested |
+| **Asymmetric Device Pairing**| 6-digit confirmation code & timing-safe equality | Scaffolding | `test_confirm_pairing_success` | Verified | Verified |
+| **Mutual Authentication** | 32-byte CSPRNG nonces, 60s TTL, replay prevention | Mocked | Tested | Tested | Tested |
+| **HITL Authorization Gate** | Sensitive tools require `ApprovalCard` + single-use token | Simulated in mock client | Tested | Tested | `test_single_use_approval_token_cannot_replay` |
+| **Emergency Stop** | `jarvis.system.emergency_stop` revokes in-flight authorizations | Tested | Tested | Tested | `test_emergency_stop_during_pending_approval_race` |
+| **State Tracking & Heartbeat** | Periodic `jarvis.heartbeat`, exponential backoff | N/A | N/A | Tested | Tested |
+| **Revocation Invalidation** | Immediate session termination on revocation | N/A | Tested | Tested | `test_session_lifecycle_and_invalidation` |
+| **Payload & Rate Limiting**| 5 MB frame limit, max 10 concurrent requests | N/A | N/A | Tested | `test_oversized_payload_rejection_at_5mb` |
 
 ---
 
-## 6. Automated Test Suites
+## 7. Automated Test Suites
 
-- `tests/test_phase8_android.py` (11 tests verifying Android tree, Gradle structure, security XML, DTOs, and state machine).
+- `tests/test_phase8_android.py` (13 tests verifying Android tree, Gradle structure, security XML, DTOs, secure storage, and state machine).
 - `tests/test_phase8_2_network_pairing.py` (16 tests verifying pairing registry, challenge signing, replay defense, and network RPCs).
 - `tests/test_phase8_3_session_live.py` (13 tests verifying live session lifecycle, turn round trips, heartbeat, HITL approvals, emergency stop, and payload limits).
-- Total repository tests: **269/269 passing 100%**.
+- `tests/test_phase8_4_hardening.py` (7 tests verifying production hardening, stale card rejection, replay defense, race conditions, and audit trail integrity).
+- Total repository tests: **277/277 passing 100%**.
