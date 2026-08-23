@@ -38,8 +38,8 @@ class ApprovalCard(BaseModel):
     parameter_payload: dict[str, Any] = Field(default_factory=dict)
     payload_hash: str = ""
     risk_summary: str = ""
-    session_id: str = "default_session"
-    correlation_id: str = "default_corr"
+    session_id: str = ""
+    correlation_id: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at_epoch: float = 0.0
     is_approved: bool = False
@@ -55,8 +55,8 @@ class ApprovalCard(BaseModel):
         risk_summary: str,
         tool_id: str = "",
         tool_version: str = "1.0.0",
-        session_id: str = "default_session",
-        correlation_id: str = "default_corr",
+        session_id: str = "",
+        correlation_id: str = "",
         ttl_seconds: int = 300,
     ) -> "ApprovalCard":
         """Factory method to construct an approval card with payload hash and expiration."""
@@ -91,7 +91,7 @@ class ApprovalToken(BaseModel):
     card_id: UUID
     tool_id: str = ""
     target_resource: str = ""
-    session_id: str = "default_session"
+    session_id: str = ""
     payload_hash: str
     signature: str = "sig_sha256"
     issued_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

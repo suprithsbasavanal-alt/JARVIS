@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
+from config.schema import ModelTier
 from core.compat import BaseModel, Field
 
 

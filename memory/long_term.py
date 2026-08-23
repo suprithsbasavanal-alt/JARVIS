@@ -12,6 +12,7 @@ class MemoryType(str, Enum):
     EPISODIC = "EPISODIC"       # Explicitly permitted interaction summaries / events
     SEMANTIC = "SEMANTIC"       # Stable user-approved facts / preferences
     SENSITIVE = "SENSITIVE"     # Highly sensitive data requiring elevated protection
+    USER_PREFERENCE = "USER_PREFERENCE"  # User preference memory item
 
 
 # Alias for backward compatibility

@@ -103,9 +103,13 @@ class AuditLogger:
         correlation_id: str = "default_correlation",
         event_type: str = "AGENT_EVENT",
         risk_level: str = "NORMAL",
+        permission_level: str | None = None,
         approval_token_id: str | None = None,
+        **kwargs: Any,
     ) -> AuditEntry:
         """Record an event into the audit trail with sanitized parameters."""
+        if permission_level is not None and risk_level == "NORMAL":
+            risk_level = str(permission_level)
         seq = len(self._entries) + 1
         clean_params = self._sanitize_params(parameters)
 

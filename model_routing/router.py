@@ -65,16 +65,32 @@ class ModelRouter:
         """Register a model execution provider."""
         self._providers[name] = provider
 
-    def get_provider_for_tier(self, tier: ModelTier) -> BaseModelProvider:
+    def get_provider_for_tier(self, tier: ModelTier | Any) -> BaseModelProvider:
         """Resolve the appropriate provider backend for the requested tier."""
-        tier_config_map = {
-            ModelTier.FAST: self.config.fast_tier,
-            ModelTier.REASONING: self.config.reasoning_tier,
-            ModelTier.LOCAL_PRIVATE: self.config.local_private_tier,
-        }
-        tier_cfg = tier_config_map.get(tier, self.config.fast_tier)
+        if hasattr(tier, "provider"):
+            tier_cfg = tier
+            tier_val = ModelTier.FAST
+        elif isinstance(tier, str) and tier in ModelTier.__members__:
+            tier_val = ModelTier[tier]
+            tier_config_map = {
+                ModelTier.FAST: self.config.fast_tier,
+                ModelTier.REASONING: self.config.reasoning_tier,
+                ModelTier.LOCAL_PRIVATE: self.config.local_private_tier,
+            }
+            tier_cfg = tier_config_map.get(tier_val, self.config.fast_tier)
+        elif isinstance(tier, ModelTier):
+            tier_val = tier
+            tier_config_map = {
+                ModelTier.FAST: self.config.fast_tier,
+                ModelTier.REASONING: self.config.reasoning_tier,
+                ModelTier.LOCAL_PRIVATE: self.config.local_private_tier,
+            }
+            tier_cfg = tier_config_map.get(tier, self.config.fast_tier)
+        else:
+            tier_val = ModelTier.FAST
+            tier_cfg = self.config.fast_tier
 
-        if tier == ModelTier.LOCAL_PRIVATE:
+        if tier_val == ModelTier.LOCAL_PRIVATE:
             if "local-quantized" in self._providers:
                 return self._providers["local-quantized"]
             if "local" in self._providers:
@@ -86,7 +102,7 @@ class ModelRouter:
             # Fall back to mock provider in development
             provider = self._providers.get("mock")
             if not provider:
-                raise ModelRoutingError(f"No provider available for tier '{tier.value}'")
+                raise ModelRoutingError(f"No provider available for tier '{getattr(tier, 'value', tier)}'")
 
         return provider
 

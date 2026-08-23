@@ -64,8 +64,8 @@ async def test_agent_loop_sensitive_tool_triggers_confirmation(
 
     # Configure mock provider to trigger tool call on 'send'
     from model_routing.providers.mock_provider import MockModelProvider
-    from model_routing.schemas import ToolCallDefinition
-    mock_prov = agent_loop.router.get_provider_for_tier(agent_loop.router.config.fast_tier)  # type: ignore[arg-type]
+    from model_routing.schemas import ModelTier, ToolCallDefinition
+    mock_prov = agent_loop.router.get_provider_for_tier(ModelTier.FAST)
     if isinstance(mock_prov, MockModelProvider):
         mock_prov.register_tool_trigger(
             "send",

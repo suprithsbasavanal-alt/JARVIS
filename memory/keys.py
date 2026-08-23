@@ -24,6 +24,7 @@ class TestKeyProvider(KeyProvider):
     
     NEVER use this in production. Uses a fixed test salt and seed.
     """
+    __test__ = False
 
     def __init__(self, test_seed: str = "jarvis_phase2_sandbox_test_secret_seed_2026") -> None:
         self._seed = test_seed.encode("utf-8")

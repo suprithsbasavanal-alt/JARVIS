@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jarvis-core"
-version = "0.1.0-phase0"
+version = "0.1.0a0"
 description = "JARVIS - Personal AI Assistant (Phase 0: Safe Development & Architecture)"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -77,3 +77,23 @@ select = [
     "SIM", # flake8-simplify
 ]
 ignore = ["E501"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "agents*",
+    "android*",
+    "config*",
+    "conversation*",
+    "core*",
+    "desktop*",
+    "intelligence*",
+    "integrations*",
+    "memory*",
+    "model_routing*",
+    "research*",
+    "sandbox*",
+    "security*",
+    "services*",
+    "voice*",
+]

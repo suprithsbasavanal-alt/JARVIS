@@ -124,6 +124,27 @@ class MemoryManager:
 
         return record
 
+    async def remember(
+        self,
+        content: str,
+        category: MemoryType = MemoryType.SEMANTIC,
+        sensitivity: SensitivityLevel = SensitivityLevel.NORMAL,
+        session_id: str = "default_session",
+        tags: list[str] | None = None,
+        retention_policy: RetentionPolicy = RetentionPolicy.PERMANENT,
+        retention_days: int = 0,
+    ) -> MemoryRecord:
+        """Alias for remember_explicit."""
+        return await self.remember_explicit(
+            content=content,
+            category=category,
+            sensitivity=sensitivity,
+            session_id=session_id,
+            tags=tags,
+            retention_policy=retention_policy,
+            retention_days=retention_days,
+        )
+
     def propose_memory_suggestion(
         self,
         content: str,
@@ -295,6 +316,10 @@ class MemoryManager:
         )
 
         return deleted
+
+    async def forget_item(self, memory_id: UUID, session_id: str = "default_session") -> bool:
+        """Alias for forget_memory."""
+        return await self.forget_memory(memory_id=memory_id, session_id=session_id)
 
     async def forget_by_topic(self, topic: str, session_id: str = "default_session") -> int:
         """Purge memories matching topic across store and index."""

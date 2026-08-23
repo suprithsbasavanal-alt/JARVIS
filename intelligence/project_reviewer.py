@@ -44,10 +44,10 @@ class ProjectFinding(BaseModel):
 
 class ProjectReviewReport(BaseModel):
     """Structured report produced by the autonomous project reviewer."""
-    project_name: str
+    project_name: str = "JARVIS Workspace"
     review_timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     health_score: float = Field(default=100.0, ge=0.0, le=100.0)
-    summary: str
+    summary: str = "Project review completed successfully."
     files_analyzed_count: int = 0
     findings: list[ProjectFinding] = Field(default_factory=list)
     proactive_suggestions: list[ProactiveSuggestion] = Field(default_factory=list)

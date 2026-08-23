@@ -276,9 +276,10 @@ class TestPhase7DesktopIPC(unittest.IsolatedAsyncioTestCase):
         eval_result = ProactiveEvaluationResult(
             trigger=ProactiveTrigger(trigger_type=TriggerType.SESSION_START),
             review_report=ProjectReviewReport(
-                target_path="/workspace",
+                project_name="JARVIS",
+                summary="Project review complete.",
                 health_score=88.5,
-                scanned_files_count=12,
+                files_analyzed_count=12,
                 findings=[],
             ),
             suggestions=[

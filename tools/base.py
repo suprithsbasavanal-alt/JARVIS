@@ -44,9 +44,9 @@ class SideEffectLevel(str, Enum):
 
 class ToolDefinition(BaseModel):
     """Strongly typed tool specification and capability contract."""
-    tool_id: str
-    name: str
-    description: str
+    tool_id: str = ""
+    name: str = ""
+    description: str = ""
     version: str = "1.0.0"
     input_schema: dict[str, Any] = Field(default_factory=dict)
     output_schema: dict[str, Any] = Field(default_factory=dict)
@@ -58,6 +58,27 @@ class ToolDefinition(BaseModel):
     timeout_seconds: float = 5.0
     max_output_size_bytes: int = 65536  # 64KB
     side_effect_level: SideEffectLevel = SideEffectLevel.NONE
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        if "parameter_schema" in kwargs and "input_schema" not in kwargs:
+            kwargs["input_schema"] = kwargs.pop("parameter_schema")
+        if "required_permission_level" in kwargs and "permission_tier" not in kwargs:
+            kwargs["permission_tier"] = kwargs.pop("required_permission_level")
+        if "action_category" in kwargs:
+            cat = kwargs.pop("action_category")
+            if cat in (ActionCategory.SENSITIVE, "SENSITIVE"):
+                kwargs.setdefault("requires_confirmation", True)
+                kwargs.setdefault("risk_level", RiskLevel.HIGH)
+            elif cat in (ActionCategory.DESTRUCTIVE, "DESTRUCTIVE"):
+                kwargs.setdefault("requires_confirmation", True)
+                kwargs.setdefault("risk_level", RiskLevel.CRITICAL)
+        if "is_sandboxed_only" in kwargs:
+            sandboxed = kwargs.pop("is_sandboxed_only")
+            if sandboxed:
+                kwargs.setdefault("allowed_environment", "SANDBOX_ONLY")
+        super().__init__(*args, **kwargs)
+        if not self.tool_id and self.name:
+            self.tool_id = self.name
 
     # Backward compatibility properties
     @property
