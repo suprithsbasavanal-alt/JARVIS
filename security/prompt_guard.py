@@ -15,7 +15,10 @@ class PromptGuard:
         re.compile(r"override\s+(all\s+)?safety\s+protocols", re.IGNORECASE),
         re.compile(r"forget\s+all\s+(your\s+)?rules", re.IGNORECASE),
         re.compile(r"bypass\s+permission\s+(check|level|tier)", re.IGNORECASE),
-        re.compile(r"send\s+(all\s+)?passwords?\s+to", re.IGNORECASE),
+        re.compile(r"send\s+(all\s+)?(passwords?|credentials?)\s+to", re.IGNORECASE),
+        re.compile(r"</untrusted_external_content>", re.IGNORECASE),
+        re.compile(r"<\s*(admin_override|system_override|instruction)\b", re.IGNORECASE),
+        re.compile(r"!\[.*?\]\(https?://.*?[?&](key|token|password|auth|secret)=", re.IGNORECASE),
     ]
 
     def __init__(self, raise_on_detection: bool = False) -> None:

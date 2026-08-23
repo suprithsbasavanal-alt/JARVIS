@@ -29,10 +29,18 @@ class AuditEntry(BaseModel):
 
     def calculate_hash(self) -> str:
         """Compute SHA-256 hash of this entry chained with previous entry hash."""
+        if isinstance(self.timestamp, datetime):
+            ts_str = self.timestamp.isoformat()
+        else:
+            try:
+                ts_str = datetime.fromisoformat(str(self.timestamp).replace("Z", "+00:00")).isoformat()
+            except Exception:
+                ts_str = str(self.timestamp)
+
         payload = {
             "seq": self.sequence_id,
             "id": str(self.entry_id),
-            "ts": self.timestamp.isoformat(),
+            "ts": ts_str,
             "session": self.session_id,
             "correlation": self.correlation_id,
             "actor": self.actor_id,

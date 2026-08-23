@@ -6,7 +6,6 @@ Validated using Pydantic v2 with strict typing and default-safe constraints.
 from enum import Enum
 from pathlib import Path
 from typing import Literal
-from core.compat import BaseModel, Field
 
 
 class PermissionLevel(str, Enum):
@@ -21,6 +20,9 @@ class ModelTier(str, Enum):
     FAST = "fast"
     REASONING = "reasoning"
     LOCAL_PRIVATE = "local_private"
+
+
+from core.compat import BaseModel, Field
 
 
 class SystemConfig(BaseModel):

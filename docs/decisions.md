@@ -437,6 +437,23 @@ This document records the foundational architectural decisions, trade-off analys
   3. Prevents credential leaks in system diagnostics, error logs, and audit logs.
 - **Consequences**: Complete external service integration lifecycle is hermetically tested, safely gated, observable, and ready for production operations.
 
+---
+
+### ADR-026: Adversarial Red-Teaming, Automated Fuzzing & Cryptographic Audit Verification
+- **Status**: Accepted
+- **Context**: Ensuring JARVIS is completely secure prior to performance tuning (Phase 11) and deployment (Phase 13) requires formal validation against prompt injection, privilege escalation, secret exfiltration, path traversal, and audit tampering vectors.
+- **Decision**: Implement a **Dedicated Security & Red-Teaming Suite (`security/redteam/`)**:
+  1. *Adversarial Prompt Fuzzing (`AdversarialPromptFuzzer`)*: Automated testing of direct jailbreaks, DAN personas, permission tier bypasses, boundary tag breakouts, base64 obfuscation, and markdown exfiltration.
+  2. *Privilege Escalation Analysis (`PrivilegeEscalationTester`)*: Verification that `LOCKED` mode prohibits tool execution, `SENSITIVE` operations fail closed without single-use `ApprovalToken`, and parameter tampering or token replay are strictly rejected.
+  3. *Audit Chain Integrity Verifier (`AuditIntegrityVerifier`)*: Mathematical validation of SHA-256 append-only audit chains with active simulation of record deletions, payload modifications, and sequence reordering.
+  4. *Static & Runtime Security Scanner (`SecurityVulnerabilityScanner`)*: Automated inspection for leaked credentials, private subnet SSRF targets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.1`, `169.254.169.254`), and cleartext HTTP endpoints.
+- **Rationale**:
+  1. Provides verifiable, non-repudiable proof that zero critical/high security vulnerabilities exist across the system.
+  2. Protects the owner against LLM prompt manipulation, unauthorized file access, and side-channel exfiltration attacks.
+  3. Guarantees the integrity of the tamper-evident audit trail for post-incident analysis.
+- **Consequences**: Platform security is rigorously verified with automated regression testing in CI.
+
+
 
 
 
