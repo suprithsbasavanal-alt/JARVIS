@@ -296,4 +296,18 @@ This document records the foundational architectural decisions, trade-off analys
   5. *Emergency Stop*: Native global hotkey (`Cmd+Shift+Esc`) immediately revokes active approval tokens and cancels in-flight agent operations.
 - **Consequences**: Complete separation between the UI presentation layer and the Python core runtime, preserving all safety invariants from Phases 0–6.4.
 
+---
+
+### ADR-018: Android Companion Client Architecture, Hardware Security & Scaffolding
+- **Status**: Accepted
+- **Context**: The mobile companion requires a native, responsive UI capable of monitoring desktop agent health, submitting turns, confirming sensitive actions with biometric authentication, tracking study/task plans, and triggering emergency stops without compromising host daemon security or exposing unauthorized network attack surfaces.
+- **Decision**: Implement a native **Kotlin & Jetpack Compose** companion client under `android/` structured with clean architecture (`data`, `security`, `ui`, `viewmodel`), **Android Keystore (StrongBox/AES-GCM-256)** for local token isolation, **AndroidX Biometric (`BiometricPrompt`)** hardware gating for sensitive HITL approvals, **Stitch Aether Mobile Theme** tokens, and typed **JSON-RPC 2.0 DTO contracts** backed by an in-memory mock client for Phase 8.1 bootstrap.
+- **Rationale**:
+  1. *Hardware Security*: Leveraging Android Keystore and BiometricPrompt guarantees that sensitive approvals cannot be triggered by background malware without physical user biometric presence.
+  2. *Data Isolation*: Setting `allowBackup="false"` and configuring data extraction rules prevents cloud backup leaks of companion session credentials.
+  3. *Informational Proactive Invariant*: Proactive DTOs carry `isInformationalOnly = true` and `isExecutableDirectly = false` to eliminate autonomous tool execution vectors on mobile.
+  4. *Protocol Parity*: Kotlin data models exactly mirror the 10 JSON-RPC 2.0 methods established in `core/ipc_server.py`.
+- **Consequences**: Provides a fully typed, secure, and testable Android codebase ready for subsequent local network bridge integration.
+
+
 

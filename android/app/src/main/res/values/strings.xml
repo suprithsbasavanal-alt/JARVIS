@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">JARVIS</string>
+    <string name="app_subtitle">Autonomous Companion Client</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_disconnected">Disconnected</string>
+    <string name="emergency_stop">EMERGENCY STOP</string>
+    <string name="authorize_action">AUTHORIZE ACTION</string>
+    <string name="deny_action">DENY</string>
+</resources>

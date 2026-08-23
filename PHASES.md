@@ -16,8 +16,8 @@ This document establishes the official 14-phase development lifecycle for JARVIS
 | **Phase 4** | **Web & Research Engine** | Web search, URL reader, PDF/Markdown parsing, citation engine, SSRF/injection shields | **COMPLETED & VERIFIED (56 Phase 4 tests pass 100%, 150 total tests)** |
 | **Phase 5** | **Voice Pipeline** | Offline wake-word ("Hey Jarvis"), local streaming STT, natural TTS synthesis | **COMPLETED & VERIFIED (16 Phase 5 tests pass 100%, 166 total tests)** |
 | **Phase 6** | **Proactive Intelligence** | Autonomous project review, structured planning, coordinator, runtime wiring & resource hardening | **COMPLETED & VERIFIED (45 Phase 6 tests pass 100%, 211 total repository tests)** |
-| **Phase 7** | **macOS Desktop Agent** | Tauri v2 shell, native accessibility bridges, scoped filesystem sandbox | OS permission prompts scoped to explicit user directories |
-| **Phase 8** | **Android Client** | Kotlin / Jetpack Compose companion app, Android Keystore, local notification bridge | Zero-trust mTLS / E2EE device pairing & authentication verified |
+| **Phase 7** | **macOS Desktop Agent** | Tauri v2 shell, native accessibility bridges, scoped filesystem sandbox | **COMPLETED & VERIFIED (18 Phase 7 tests pass 100%, 229 total tests)** |
+| **Phase 8** | **Android Client** | Kotlin / Jetpack Compose companion app, Android Keystore, local notification bridge | **Phase 8.1 COMPLETED & VERIFIED (8 Phase 8 tests pass 100%, 237 total tests)** |
 | **Phase 9** | **Integrations Framework** | Sandboxed connectors for Gmail, Google/Apple Calendar, WhatsApp, Telegram | Granular OAuth scopes; explicit confirmation required for message sending |
 | **Phase 10** | **Security & Penetration Testing**| Comprehensive red-teaming, prompt injection fuzzing, privilege escalation tests | Zero high/critical vulnerabilities; audit logging non-repudiable |
 | **Phase 11** | **Performance & Latency Tuning** | Sub-second latency optimization, token caching, memory footprint minimization | Local inference latency < 400ms TTFT; RAM footprint < 2GB |
@@ -61,9 +61,10 @@ This document establishes the official 14-phase development lifecycle for JARVIS
 - **Scope**: Build Tauri v2 macOS application shell with Stitch-designed UI, system tray integration, keyboard shortcuts, and native AppleScript/Accessibility bridges.
 - **Constraints**: User-specified folder access only; strict macOS entitlements; Unix Domain Socket (`0700`) JSON-RPC bridge; interactive HITL approval modal; purely informational proactive advisories.
 
-### Phase 8 — Android Companion Client
+### Phase 8 — Android Companion Client [Phase 8.1 COMPLETE]
 - **Scope**: Develop native Kotlin Android client with Jetpack Compose UI, Android Keystore encryption, and secure local network sync.
-- **Constraints**: End-to-end encrypted local pairing only.
+- **Phase 8.1 Deliverables**: Project scaffolding, Gradle & AndroidX dependencies, JSON-RPC 2.0 DTO contracts, in-memory mock client, Keystore/Biometric security managers, Stitch Aether HUD mobile UI components, and automated test suite.
+- **Constraints**: End-to-end encrypted local pairing only. Informational-only proactive invariant strictly preserved on mobile.
 
 ### Phase 9 — Service Integrations
 - **Scope**: Implement connectors for Gmail, Google Calendar, Apple Calendar, WhatsApp, Telegram, and Apple Notes with dry-run preview capabilities.

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Stitch Aether HUD Color Tokens -->
+    <color name="aether_void">#080B10</color>
+    <color name="aether_surface">#121620</color>
+    <color name="aether_cyan">#00F2FF</color>
+    <color name="aether_gold">#FFD700</color>
+    <color name="aether_crimson">#FF3366</color>
+    <color name="aether_text_primary">#F0F6FC</color>
+    <color name="aether_text_secondary">#8B949E</color>
+</resources>
