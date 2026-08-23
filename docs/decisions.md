@@ -309,5 +309,24 @@ This document records the foundational architectural decisions, trade-off analys
   4. *Protocol Parity*: Kotlin data models exactly mirror the 10 JSON-RPC 2.0 methods established in `core/ipc_server.py`.
 - **Consequences**: Provides a fully typed, secure, and testable Android codebase ready for subsequent local network bridge integration.
 
+---
+
+### ADR-019: Hardware-Backed Asymmetric Device Pairing & Local Network Transport Bridge
+- **Status**: Accepted
+- **Context**: Connecting the Android companion client over a local network (Wi-Fi/LAN) introduces risks of unauthorized device access, network eavesdropping, replay attacks, session hijacking, and direct exposure of the internal Unix Domain Socket.
+- **Decision**: Implement a dedicated **Local Network Transport Bridge (`NetworkBridgeServer`)** and **Device Pairing Registry (`DevicePairingRegistry`)** enforcing:
+  1. *Dedicated Network Bridge*: Do NOT expose the Unix Domain Socket directly to the network. Instead, run an authenticated TCP/TLS JSON-RPC 2.0 bridge that wraps calls with device session validation before proxying to `AgentLoop` and `PermissionEngine`.
+  2. *Asymmetric Device Identity & Pairing*: Android generates an asymmetric key pair in `AndroidKeyStore`. Pairing requires desktop host confirmation of a 6-digit cryptographic pairing code (`jarvis.network.pair.begin` $\rightarrow$ `jarvis.network.pair.confirm`).
+  3. *Mutual Challenge-Response Authentication*: Session creation requires solving a 32-byte CSPRNG challenge nonce signed by the device's hardware key (`jarvis.network.auth.challenge` $\rightarrow$ `jarvis.network.auth.verify`).
+  4. *Replay & Expiration Defense*: Challenges expire in 60 seconds; consumed nonces are immediately tracked in `_consumed_nonces` and rejected if replayed.
+  5. *Immediate Device Revocation*: Revoking a device immediately invalidates all active session tokens.
+  6. *HITL Invariant Preservation*: Device authentication does NOT grant permission to execute sensitive tools; sensitive operations strictly require interactive `ApprovalCard` confirmation and single-use `ApprovalToken`.
+- **Rationale**:
+  1. Protects the desktop daemon against unauthorized local network devices.
+  2. Guarantees that private keys never leave Android hardware keystore / TEE.
+  3. Eliminates replay attacks, token forgery, and session hijacking.
+  4. Preserves fail-closed HITL and Emergency Stop invariants across network boundaries.
+- **Consequences**: Network transport is authenticated, encrypted, isolated, and non-repudiable with complete SHA-256 chained audit logs.
+
 
 

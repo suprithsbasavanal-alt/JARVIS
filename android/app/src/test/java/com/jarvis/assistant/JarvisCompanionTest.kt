@@ -111,4 +111,17 @@ class JarvisCompanionTest {
         assertEquals("STOPPED", stopRes.status)
         assertEquals(1, stopRes.revokedApprovals)
     }
+
+    @Test
+    fun testDeviceKeyManagerSigning() {
+        val keyManager = com.jarvis.assistant.security.StandardDeviceKeyManager()
+        val pubKey = keyManager.getPublicKeyHex()
+        assertNotNull(pubKey)
+        assertEquals(64, pubKey.length)
+
+        val challenge = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        val signature = keyManager.signChallenge(challenge)
+        assertNotNull(signature)
+        assertEquals(64, signature.length)
+    }
 }

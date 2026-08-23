@@ -122,6 +122,20 @@ class TestPhase8AndroidBootstrap(unittest.TestCase):
         self.assertIn("testSensitiveActionTriggersApprovalCard", content)
         self.assertIn("testEmergencyStop", content)
 
+    def test_phase8_2_network_transport_and_key_manager_files(self) -> None:
+        """9. Verify Phase 8.2 DeviceKeyManager and NetworkTransportClient exist."""
+        self.assertTrue((JAVA_SRC / "security" / "DeviceKeyManager.kt").exists())
+        self.assertTrue((JAVA_SRC / "data" / "remote" / "NetworkTransportClient.kt").exists())
+
+        key_mgr_content = (JAVA_SRC / "security" / "DeviceKeyManager.kt").read_text(encoding="utf-8")
+        self.assertIn("interface DeviceKeyManager", key_mgr_content)
+        self.assertIn("fun signChallenge", key_mgr_content)
+
+        transport_content = (JAVA_SRC / "data" / "remote" / "NetworkTransportClient.kt").read_text(encoding="utf-8")
+        self.assertIn("class NetworkTransportClient", transport_content)
+        self.assertIn("jarvis.network.auth.challenge", transport_content)
+        self.assertIn("jarvis.network.auth.verify", transport_content)
+
 
 if __name__ == "__main__":
     unittest.main()

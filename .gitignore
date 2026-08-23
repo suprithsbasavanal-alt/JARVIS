@@ -60,9 +60,9 @@ dmypy.json
 *.swo
 
 # JARVIS Runtime & Mock Data (Safe Dev)
-data/
-logs/
-vault/
+/data/
+/logs/
+/vault/
 *.db
 *.sqlite
 *.sqlite3
