@@ -257,5 +257,16 @@ class ProactiveActionExecutionBlockedError(SecurityError, ProactiveIntelligenceE
     pass
 
 
+class ProactiveCooldownActiveError(ProactiveIntelligenceError):
+    """Raised when a proactive trigger is invoked before its rate-limit cooldown window has elapsed."""
+    pass
+
+
+class ProactiveTriggerError(ProactiveIntelligenceError):
+    """Raised when a proactive trigger configuration or context payload is invalid."""
+    pass
+
+
+
 
 

@@ -1,10 +1,17 @@
-"""Phase 6.2 Proactive Intelligence and Reasoning Package."""
+"""Phase 6 Proactive Intelligence and Reasoning Package."""
 
 from intelligence.analyzer import (
     DisagreementAssessment,
     DisagreementCategory,
     ReasoningAnalyzer,
 )
+from intelligence.coordinator import (
+    ProactiveCoordinator,
+    ProactiveEvaluationResult,
+    ProactiveTrigger,
+    TriggerType,
+)
+from intelligence.dialogue_advisor import ProactiveDialogueAdvisor
 from intelligence.plan_generator import (
     PlanDifficulty,
     PlanGenerator,
@@ -39,13 +46,18 @@ __all__ = [
     "PlanMilestone",
     "PlanStepItem",
     "PlanType",
+    "ProactiveCoordinator",
+    "ProactiveDialogueAdvisor",
+    "ProactiveEvaluationResult",
+    "ProactiveSuggestion",
+    "ProactiveTrigger",
     "ProjectFinding",
     "ProjectReviewEngine",
     "ProjectReviewReport",
-    "ProactiveSuggestion",
     "ReasoningAnalyzer",
     "StructuredPlan",
     "SuggestionCategory",
     "SuggestionEngine",
     "SuggestionPriority",
+    "TriggerType",
 ]

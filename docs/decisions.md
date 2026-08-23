@@ -22,6 +22,21 @@ This document records the foundational architectural decisions, trade-off analys
 - [ADR-012: Secure Document Parsing (PDF/Markdown), Text Normalization, and Verifiable Citation Engine](#adr-012-secure-document-parsing-pdfmarkdown-text-normalization-and-verifiable-citation-engine)
 - [ADR-013: Local-Only Offline Voice Subsystem and Ephemeral Audio Buffer Architecture](#adr-013-local-only-offline-voice-subsystem-and-ephemeral-audio-buffer-architecture)
 - [ADR-014: Proactive Intelligence, Autonomous Project Review Routines, and Informational-Only Safety Guard](#adr-014-proactive-intelligence-autonomous-project-review-routines-and-informational-only-safety-guard)
+- [ADR-015: Proactive Intelligence Coordinator, Rate-Limited Event Triggers, and Dialogue Advisory Architecture](#adr-015-proactive-intelligence-coordinator-rate-limited-event-triggers-and-dialogue-advisory-architecture)
+
+---
+
+### ADR-015: Proactive Intelligence Coordinator, Rate-Limited Event Triggers, and Dialogue Advisory Architecture
+- **Status**: Accepted
+- **Context**: Disconnected proactive features risk triggering uncoordinated checks, spamming the user with duplicate recommendations, causing performance degradation during background scans, or injecting raw unvalidated context into LLM dialogue turns.
+- **Decision**: Implement a **Centralized Proactive Intelligence Coordinator (`ProactiveCoordinator`)** with event-driven triggers (`ProactiveTrigger`), **Rate-Limiting Cooldown Windows** per trigger type, **Deterministic SHA-256 Suggestion Deduplication**, and a **Non-Invasive Dialogue Advisory Layer (`ProactiveDialogueAdvisor`)** emitting inert XML data structures (`<proactive_advisory>`).
+- **Rationale**:
+  1. Prevents notification fatigue and recommendation thrashing by deduplicating repeated findings and enforcing cooldown limits.
+  2. Protects conversational context from prompt injection by wrapping project review findings and user propositions inside inert XML tags.
+  3. Preserves human-in-the-loop boundaries: proactive coordinator advice is structured as system/user observations without granting autonomous execution capabilities.
+  4. Provides complete observability through tamper-evident SHA-256 chained audit logs.
+- **Consequences**: Proactive triggers are rate-limited; urgent out-of-band evaluations must explicitly use `force=True` or `MANUAL_REQUEST`.
+
 
 ---
 
