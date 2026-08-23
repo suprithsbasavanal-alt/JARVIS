@@ -1,0 +1,48 @@
+/* Stitch Design System: Aether HUD Design Tokens */
+:root {
+  /* Color Palette */
+  --bg-surface: #111318;
+  --bg-surface-glass: rgba(17, 19, 24, 0.72);
+  --bg-surface-high: rgba(40, 42, 46, 0.65);
+  --bg-surface-card: rgba(30, 32, 36, 0.85);
+  
+  --primary-cyan: #00f2ff;
+  --primary-cyan-dim: #00dbe7;
+  --primary-cyan-glow: rgba(0, 242, 255, 0.25);
+  --primary-cyan-subtle: rgba(0, 242, 255, 0.08);
+
+  --secondary-gold: #fecb00;
+  --secondary-gold-dim: #f1c100;
+  --secondary-gold-glow: rgba(254, 203, 0, 0.25);
+
+  --accent-purple: #7318ff;
+  --accent-purple-glow: rgba(115, 24, 255, 0.20);
+
+  --color-text-primary: #e2e2e8;
+  --color-text-secondary: #b9cacb;
+  --color-text-muted: #849495;
+
+  --color-success: #00e676;
+  --color-warning: #ffb74d;
+  --color-danger: #ff5252;
+  --color-danger-glow: rgba(255, 82, 82, 0.35);
+
+  --border-glass: rgba(255, 255, 255, 0.12);
+  --border-glass-hover: rgba(0, 242, 255, 0.40);
+
+  /* Typography */
+  --font-family-display: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-family-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-family-mono: "JetBrains Mono", Menlo, Monaco, "Courier New", monospace;
+
+  /* Spacing & Radii */
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* Glass Blur Filter */
+  --glass-backdrop-blur: blur(24px) saturate(190%);
+  --shadow-hud: 0 20px 60px rgba(0, 0, 0, 0.65), 0 0 40px rgba(0, 242, 255, 0.06);
+}

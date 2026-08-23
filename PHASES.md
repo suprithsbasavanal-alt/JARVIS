@@ -57,9 +57,9 @@ This document establishes the official 14-phase development lifecycle for JARVIS
 - **Scope**: Autonomous project review routines, proactive recommendation engine, study/task plan generation, and polite epistemic disagreement engine.
 - **Constraints**: Suggestions are purely informational; cannot trigger tool execution without user command.
 
-### Phase 7 — macOS Desktop Agent
+### Phase 7 — macOS Desktop Agent [COMPLETED]
 - **Scope**: Build Tauri v2 macOS application shell with Stitch-designed UI, system tray integration, keyboard shortcuts, and native AppleScript/Accessibility bridges.
-- **Constraints**: User-specified folder access only; strict macOS entitlements.
+- **Constraints**: User-specified folder access only; strict macOS entitlements; Unix Domain Socket (`0700`) JSON-RPC bridge; interactive HITL approval modal; purely informational proactive advisories.
 
 ### Phase 8 — Android Companion Client
 - **Scope**: Develop native Kotlin Android client with Jetpack Compose UI, Android Keystore encryption, and secure local network sync.

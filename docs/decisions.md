@@ -282,3 +282,18 @@ This document records the foundational architectural decisions, trade-off analys
   4. Bounded fingerprint cache prevents memory leakage over long-running daemon sessions.
 - **Consequences**: Proactive advisory context enters the agent's working context in Step 3 as inert informational data, with full security isolation.
 
+---
+
+### ADR-017: Tauri v2 Desktop Shell with Stitch-Designed Aether HUD and Unix Domain Socket JSON-RPC Bridge
+- **Status**: Accepted
+- **Context**: The macOS desktop client requires a native, low-latency, and memory-efficient user interface connecting to the Python core daemon while enforcing strict security isolation, least privilege, and non-repudiable auditability.
+- **Decision**: Use a **Tauri v2** desktop host (Rust) managing native AppKit visual effects, system tray, and global shortcuts (`Cmd+Space` HUD, `Cmd+Shift+Esc` Emergency Stop), paired with a **Stitch-designed Aether HUD** frontend (HTML5/Vanilla TypeScript/CSS) and a **Unix Domain Socket (`0700` POSIX mode) / JSON-RPC 2.0** server with ephemeral auth token handshake.
+- **Rationale**:
+  1. *Resource Efficiency*: Tauri v2 leverages native WebKit with a lightweight footprint compared to heavy Electron shells.
+  2. *Security Boundary*: Local Unix Domain Sockets with POSIX `0700` permissions prevent unauthorized cross-user access on the host system.
+  3. *Least-Privilege Capabilities*: Tauri v2 ACL configuration restricts the webview from executing arbitrary shell commands or opening arbitrary network connections.
+  4. *Human-in-the-Loop Integrity*: Sensitive actions generate interactive approval modals requiring explicit user authorization before single-use cryptographic tokens are dispatched.
+  5. *Emergency Stop*: Native global hotkey (`Cmd+Shift+Esc`) immediately revokes active approval tokens and cancels in-flight agent operations.
+- **Consequences**: Complete separation between the UI presentation layer and the Python core runtime, preserving all safety invariants from Phases 0–6.4.
+
+
