@@ -386,4 +386,22 @@ This document records the foundational architectural decisions, trade-off analys
   3. Preserves fail-closed HITL and emergency-stop safety invariants across all personal service connectors.
 - **Consequences**: External service ecosystem can scale to diverse third-party APIs while maintaining strict security and privacy boundaries.
 
+---
+
+### ADR-023: Specific Service Connectors, Hermetic Test Doubles & Capability Boundaries
+- **Status**: Accepted
+- **Context**: Phase 9.2 introduces specific connectors for email (Gmail), calendar (Google Calendar), cloud files (Google Drive), team messaging (Slack), and software repositories (GitHub). To maintain zero external network dependencies, avoid leaking production credentials, and guarantee strict test isolation, the architecture must support hermetic test doubles and simulated failure modes.
+- **Decision**: Implement **Hermetic Connectors with Explicit Capability Manifests and Deterministic Simulation Hooks**:
+  1. *Dedicated Adapters*: Create specialized adapter classes inheriting from `BaseHermeticConnector`: `GmailConnector`, `GoogleCalendarConnector`, `GoogleDriveConnector`, `SlackConnector`, and `GitHubConnector`.
+  2. *Strict Capability Boundaries*: Each connector declares its supported capability subset. For example, `GmailConnector` declares `READ`, `SEARCH`, `CREATE`, `SEND`, `DELETE`. Operations requesting undeclared capabilities fail closed immediately with `UndeclaredCapabilityError`.
+  3. *HITL Single-Use Token Enforcement*: Any state-modifying or outbound action (`send_email`, `post_message`, `create_event`, `upload_file`, `create_issue`, `delete_email`, `delete_file`) strictly requires an interactive `ApprovalCard` and single-use `ApprovalToken`. Token replay attempts are rejected.
+  4. *Simulation Infrastructure (`ConnectorSimulationConfig`)*: Provide deterministic failure injection for rate-limiting (HTTP 429), outages (HTTP 503), timeouts, and authentication errors without performing live external network calls.
+  5. *Credential Secrecy*: All connectors utilize `BaseCredentialProvider` and redact tokens/secrets from all metadata dictionaries, `__repr__`, IPC responses, and chained audit logs.
+- **Rationale**:
+  1. Ensures unit and integration tests run entirely hermetically, quickly, and deterministically without flake or external credential requirements.
+  2. Prevents unauthorized or unintentional external actions through strict Human-in-the-Loop gating.
+  3. Prepares a robust abstraction ready for real OAuth2 / credential onboarding in Phase 13.
+- **Consequences**: Connectors are fully tested, fault-isolated, auditable, and secure against privilege escalation and token reuse.
+
+
 

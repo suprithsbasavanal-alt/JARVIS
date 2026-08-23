@@ -17,7 +17,8 @@ This document establishes the official 14-phase development lifecycle for JARVIS
 | **Phase 5** | **Voice Pipeline** | Offline wake-word ("Hey Jarvis"), local streaming STT, natural TTS synthesis | **COMPLETED & VERIFIED (16 Phase 5 tests pass 100%, 166 total tests)** |
 | **Phase 6** | **Proactive Intelligence** | Autonomous project review, structured planning, coordinator, runtime wiring & resource hardening | **COMPLETED & VERIFIED (45 Phase 6 tests pass 100%, 211 total repository tests)** |
 | **Phase 7** | **macOS Desktop Agent** | Tauri v2 shell, native accessibility bridges, scoped filesystem sandbox | **COMPLETED & VERIFIED (18 Phase 7 tests pass 100%, 229 total tests)** |
-| **Phase 9** | **Integrations Framework** | Sandboxed connectors for Gmail, Google/Apple Calendar, WhatsApp, Telegram | **Phase 9.1 Foundation COMPLETED & VERIFIED (19 Phase 9 tests pass 100%, 296 total tests)** |
+| **Phase 8** | **Android Client** | Kotlin / Jetpack Compose companion app, Android Keystore, local network transport, hardware pairing & production hardening | **COMPLETED & VERIFIED (47 Phase 8 tests pass 100%, 277 total tests)** |
+| **Phase 9** | **Integrations Framework** | Sandboxed connectors for Gmail, Google Calendar, Google Drive, Slack, GitHub | **Phase 9.1 & 9.2 COMPLETED & VERIFIED (34 Phase 9 tests pass 100%, 311 total tests)** |
 | **Phase 10** | **Security & Penetration Testing**| Comprehensive red-teaming, prompt injection fuzzing, privilege escalation tests | Zero high/critical vulnerabilities; audit logging non-repudiable |
 | **Phase 11** | **Performance & Latency Tuning** | Sub-second latency optimization, token caching, memory footprint minimization | Local inference latency < 400ms TTFT; RAM footprint < 2GB |
 | **Phase 12** | **Final Architectural Review** | End-to-end security audit, documentation sign-off, kill-switch verification | Formal owner verification of all privacy and fail-closed policies |
@@ -68,10 +69,11 @@ This document establishes the official 14-phase development lifecycle for JARVIS
 - **Phase 8.4 Deliverables**: Production hardening, `SecureStorageManager` encrypted credential persistence and wipe paths, `FLAG_SECURE` window screenshot shielding, `network_security_config.xml` cleartext prohibition, socket timeouts & 5 MB payload bounds, stale approval rejection, and biometric HITL authorization.
 - **Constraints**: End-to-end encrypted local pairing only. Informational-only proactive invariant strictly preserved on mobile. HITL authorization strictly enforced for sensitive tools across network boundaries. Direct Unix Domain Socket exposure prohibited.
 
-### Phase 9 — Service Integrations [Phase 9.1 COMPLETED]
-- **Scope**: Implement connectors for Gmail, Google Calendar, Apple Calendar, WhatsApp, Telegram, and Apple Notes with dry-run preview capabilities.
+### Phase 9 — Service Integrations [Phase 9.1 & 9.2 COMPLETED]
+- **Scope**: Implement connectors for Gmail, Google Calendar, Google Drive, Slack, GitHub, Apple Notes, WhatsApp, and Telegram with dry-run preview capabilities.
 - **Phase 9.1 Deliverables**: Service adapter foundation (`BaseServiceAdapter`), explicit capability contract (`ServiceCapability`), permission engine bridge (`ServicePermissionBridge`), credential provider isolation (`BaseCredentialProvider`), non-repudiable audit logging, fault isolation, hermetic mock messaging adapter, and IPC/Network service endpoints.
-- **Constraints**: Read-only first; all write/send actions permanently gated behind interactive confirmation. Sensitive capabilities (`SEND`, `DELETE`, `EXECUTE`, `CREATE`, `UPDATE`) strictly require HITL `ApprovalCard` + single-use `ApprovalToken`. Plaintext credentials prohibited in logs, IPC, or metadata.
+- **Phase 9.2 Deliverables**: Specific hermetic connectors (`GmailConnector`, `GoogleCalendarConnector`, `GoogleDriveConnector`, `SlackConnector`, `GitHubConnector`), explicit capability manifests, simulation hooks for failure modes (rate-limiting, outage, timeout, auth failure), single-use `ApprovalToken` HITL gating for write/send/delete operations, and credential non-disclosure across all subsystems.
+- **Constraints**: Read-only first; all write/send/delete actions permanently gated behind interactive confirmation. Sensitive capabilities (`SEND`, `DELETE`, `EXECUTE`, `CREATE`, `UPDATE`) strictly require HITL `ApprovalCard` + single-use `ApprovalToken`. Plaintext credentials prohibited in logs, IPC, or metadata. Zero external network dependencies in tests.
 
 ### Phase 10 — Security & Penetration Testing
 - **Scope**: Adversarial red-teaming: direct/indirect prompt injection fuzzing, privilege escalation attempts, secret exfiltration attacks, and fail-closed audit.
