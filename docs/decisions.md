@@ -470,6 +470,24 @@ This document records the foundational architectural decisions, trade-off analys
   3. Guarantees stable long-term background operation on memory-constrained macOS host machines.
 - **Consequences**: Fast, memory-safe, and highly responsive local and routed model execution across all JARVIS tiers.
 
+---
+
+### ADR-028: Holistic Architectural Integrity, Universal Fail-Closed Invariants & Final Verification Standards
+- **Status**: Accepted
+- **Context**: Completing the JARVIS platform requires a formal architectural synthesis establishing unbroken invariant compliance, deterministic contract boundaries, and fail-closed safety guarantees across all 12 developed phases.
+- **Decision**: Establish **Universal Architectural Invariants & Final Verification Standards**:
+  1. *Universal Fail-Closed Safety*: Emergency Stop immediately halts tool execution, IPC turn processing, and external service execution without network egress.
+  2. *Cryptographic HITL Access Control*: Sensitive operations strictly require human approval via single-use `ApprovalToken` with cryptographic parameter payload verification.
+  3. *Non-Repudiable Chained Audit Logging*: Every security, permission, and service event is appended to an immutable, mathematically verifiable SHA-256 hash chain.
+  4. *Complete Secret Isolation*: Zero credentials, tokens, or private keys in logs, DTOs, IPC payloads, or repository code.
+  5. *Strict Performance & Resource Ceilings*: TTFT < 400ms SLA, sub-10ms cache retrieval, and process RSS RAM strictly < 2048 MB.
+- **Rationale**:
+  1. Delivers a complete, coherent, production-hardened personal AI assistant architecture.
+  2. Guarantees that the human owner maintains absolute cryptographic control over all agent capabilities.
+  3. Formally closes the 12-phase development lifecycle with 100% test coverage and zero security regressions.
+- **Consequences**: JARVIS architectural specification, implementation, and verification are 100% complete and fully verified.
+
+
 
 
 

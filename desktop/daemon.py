@@ -20,6 +20,8 @@ from sandbox.mock_fs import MockFileSystem
 from sandbox.process_executor import ProcessSandboxExecutor
 from security.audit_logger import AuditLogger
 from security.permissions import PermissionEngine
+from services.permissions import ServicePermissionBridge
+from services.registry import ServiceRegistry
 from tools.mock_tools import MockEmailSenderTool, MockFileReaderTool
 from tools.registry import ToolRegistry
 
@@ -74,7 +76,14 @@ class JarvisDesktopDaemon:
             memory_manager=self.memory_manager,
         )
 
-        # 8. IPC Server
+        # 8. Service Registry & Permissions Bridge
+        self.service_permission_bridge = ServicePermissionBridge(self.permission_engine)
+        self.service_registry = ServiceRegistry(
+            audit_logger=self.audit_logger,
+            permission_bridge=self.service_permission_bridge,
+        )
+
+        # 9. IPC Server
         self.ipc_server = IPCServer(
             agent_loop=self.agent_loop,
             event_bus=self.event_bus,
@@ -83,6 +92,7 @@ class JarvisDesktopDaemon:
             audit_logger=self.audit_logger,
             socket_path=self.socket_path,
             auth_token=self.auth_token,
+            service_registry=self.service_registry,
         )
 
     def _register_default_tools(self) -> None:
