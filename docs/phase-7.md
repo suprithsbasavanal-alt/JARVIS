@@ -86,7 +86,7 @@ All communication between the Tauri frontend / native client and the Python core
 
 ## 4. Verification & Testing
 
-The Phase 7 implementation was validated with **16 dedicated automated tests** in `tests/test_phase7_desktop.py`, bringing the total repository test suite to **227 passing tests (100% pass rate in 1.28s)**:
+The Phase 7 implementation was validated with **18 dedicated automated tests** in `tests/test_phase7_desktop.py`, bringing the total repository test suite to **229 passing tests (100% pass rate in 1.10s)**:
 
 - `test_ipc_socket_creation_and_permissions`: Validates socket creation and `0700` permissions.
 - `test_unauthenticated_request_rejected`: Validates rejection of unauthenticated commands (`-32000`).
@@ -104,3 +104,6 @@ The Phase 7 implementation was validated with **16 dedicated automated tests** i
 - `test_secret_isolation_over_ipc`: Validates that secret keys are never exposed over IPC.
 - `test_malformed_json_payload_rejection`: Validates `-32700 Parse error` on invalid JSON.
 - `test_backend_unavailable_error_handling`: Validates client connection error handling when daemon is offline.
+- `test_desktop_daemon_instantiation_and_provider_wiring`: Validates `JarvisDesktopDaemon` instantiation and provider registration.
+- `test_desktop_daemon_ipc_lifecycle`: Validates `JarvisDesktopDaemon` socket creation, handshake, and clean shutdown.
+

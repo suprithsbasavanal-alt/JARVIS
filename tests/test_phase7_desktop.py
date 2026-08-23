@@ -14,6 +14,7 @@ from core.context import SessionContext
 from core.events import EventBus
 from core.ipc_server import IPCServer
 from core.types import BaseDomainEvent, ExecutionContext
+from desktop.daemon import JarvisDesktopDaemon
 from intelligence.coordinator import (
     ProactiveCoordinator,
     ProactiveEvaluationResult,
@@ -56,7 +57,7 @@ class TestPhase7DesktopIPC(unittest.IsolatedAsyncioTestCase):
         )
 
         self.tool_registry = ToolRegistry()
-        self.mock_fs = MockFileSystem()
+        self.mock_fs = MockFileSystem(sandbox_root=Path(self.temp_dir.name))
         self.mock_fs.write_file("/test.txt", "Hello from sandboxed file")
         self.process_executor = ProcessSandboxExecutor()
         self.tool_registry.register_tool(MockFileReaderTool(mock_fs=self.mock_fs))
@@ -410,6 +411,72 @@ class TestPhase7DesktopIPC(unittest.IsolatedAsyncioTestCase):
         non_existent_sock = Path(self.temp_dir.name) / "offline.sock"
         with self.assertRaises((FileNotFoundError, ConnectionRefusedError)):
             await asyncio.open_unix_connection(str(non_existent_sock))
+
+    def test_desktop_daemon_instantiation_and_provider_wiring(self) -> None:
+        """17. Verify JarvisDesktopDaemon instantiates cleanly and wires all 8 subsystems without TypeError."""
+        daemon_sock = Path(self.temp_dir.name) / "daemon_test.sock"
+        daemon = JarvisDesktopDaemon(
+            socket_path=daemon_sock,
+            auth_token="daemon-test-token",
+        )
+
+        # Verify socket and token configuration
+        self.assertEqual(daemon.socket_path, daemon_sock)
+        self.assertEqual(daemon.auth_token, "daemon-test-token")
+
+        # Verify all 8 core subsystems are initialized and non-null
+        self.assertIsNotNone(daemon.audit_logger)
+        self.assertIsNotNone(daemon.permission_engine)
+        self.assertIsNotNone(daemon.event_bus)
+        self.assertIsNotNone(daemon.memory_manager)
+        self.assertIsNotNone(daemon.tool_registry)
+        self.assertIsNotNone(daemon.model_router)
+        self.assertIsNotNone(daemon.proactive_coordinator)
+        self.assertIsNotNone(daemon.runtime_bridge)
+        self.assertIsNotNone(daemon.agent_loop)
+        self.assertIsNotNone(daemon.ipc_server)
+
+        # Verify model router provider registration
+        provider = daemon.model_router._providers.get("mock-primary")
+        self.assertIsNotNone(provider)
+        self.assertEqual(provider.provider_name, "mock-primary")
+
+        # Verify default tools registered
+        self.assertIsNotNone(daemon.tool_registry.get_tool("mock_file_reader"))
+        self.assertIsNotNone(daemon.tool_registry.get_tool("mock_email_sender"))
+
+    async def test_desktop_daemon_ipc_lifecycle(self) -> None:
+        """18. Verify JarvisDesktopDaemon IPC server starts, accepts auth handshake, and stops cleanly."""
+        daemon_sock = Path(self.temp_dir.name) / "daemon_lifecycle.sock"
+        daemon = JarvisDesktopDaemon(
+            socket_path=daemon_sock,
+            auth_token="daemon-lifecycle-token",
+        )
+
+        # Start IPC server
+        await daemon.ipc_server.start()
+        self.assertTrue(daemon_sock.exists())
+
+        try:
+            # Connect and perform handshake
+            reader, writer = await asyncio.open_unix_connection(str(daemon_sock))
+            handshake_req = {
+                "jsonrpc": "2.0",
+                "id": "handshake-1",
+                "method": "jarvis.handshake",
+                "params": {"auth_token": "daemon-lifecycle-token"},
+            }
+            writer.write((json.dumps(handshake_req) + "\n").encode("utf-8"))
+            await writer.drain()
+            line = await reader.readline()
+            resp = json.loads(line.decode("utf-8"))
+            self.assertIn("result", resp)
+            self.assertTrue(resp["result"]["authenticated"])
+            writer.close()
+            await writer.wait_closed()
+        finally:
+            await daemon.ipc_server.stop()
+            self.assertFalse(daemon_sock.exists())
 
 
 if __name__ == "__main__":

@@ -37,6 +37,7 @@ export class ConversationView {
     if (!list) return;
 
     const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    this.messages.push({ role, content, timestamp: timeStr });
     const item = document.createElement("div");
     item.className = `message-item message-${role}`;
     item.innerHTML = `

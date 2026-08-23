@@ -53,7 +53,7 @@ class JarvisDesktopDaemon:
         # 5. Model Routing
         self.model_router = ModelRouter()
         self.mock_provider = MockModelProvider("mock-primary")
-        self.model_router.register_provider(self.mock_provider)
+        self.model_router.register_provider("mock-primary", self.mock_provider)
 
         # 6. Proactive Intelligence & Runtime Bridge
         self.proactive_coordinator = ProactiveCoordinator(
