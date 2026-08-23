@@ -68,47 +68,109 @@ export interface ActivePlanPayload {
   is_informational_only: boolean;
 }
 
+export class IpcConnectionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "IpcConnectionError";
+  }
+}
+
+export class IpcRpcError extends Error {
+  public code: number;
+  constructor(message: string, code: number = -32603) {
+    super(message);
+    this.name = "IpcRpcError";
+    this.code = code;
+  }
+}
+
 export class JarvisIpcClient {
   private sessionId: string | null = null;
+  private authToken: string;
+  private devBridgeUrl: string;
+
+  constructor(
+    authToken: string = "jarvis-desktop-local-token",
+    devBridgeUrl: string = "http://127.0.0.1:8765/rpc"
+  ) {
+    this.authToken = authToken;
+    this.devBridgeUrl = devBridgeUrl;
+  }
+
+  private isTauriRuntime(): boolean {
+    return !!((window as any).__TAURI__ && (window as any).__TAURI__.core);
+  }
 
   private async invokeCommand<T>(method: string, params: Record<string, any> = {}): Promise<T> {
-    if ((window as any).__TAURI__ && (window as any).__TAURI__.core) {
-      return await (window as any).__TAURI__.core.invoke("send_ipc_command", {
-        method,
-        params,
-      });
+    // 1. Native Tauri Runtime Execution
+    if (this.isTauriRuntime()) {
+      try {
+        const result = await (window as any).__TAURI__.core.invoke("send_ipc_command", {
+          method,
+          params,
+        });
+        if (result === undefined || result === null) {
+          throw new IpcRpcError(`Empty result returned for IPC command '${method}'.`);
+        }
+        return result as T;
+      } catch (err: any) {
+        throw new IpcRpcError(
+          typeof err === "string" ? err : err.message || `IPC error on '${method}'`,
+          err.code || -32603
+        );
+      }
     }
 
-    // Fallback simulation when running in standard browser dev mode
-    console.info(`[IPC Fallback] Invoking '${method}'`, params);
-    if (method === "jarvis.status") {
-      return {
-        status: "ONLINE",
-        agent_state: "IDLE",
-        registered_tools_count: 5,
-        active_sessions_count: 1,
-        pending_approvals_count: 0,
-        timestamp: new Date().toISOString(),
-      } as T;
+    // 2. Browser Development Diagnostic Bridge
+    const reqId = "req-" + Math.random().toString(36).substring(2, 9);
+    const bodyPayload = {
+      jsonrpc: "2.0",
+      id: reqId,
+      method,
+      params,
+    };
+
+    let res: Response;
+    try {
+      res = await fetch(this.devBridgeUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Jarvis-Auth-Token": this.authToken,
+        },
+        body: JSON.stringify(bodyPayload),
+      });
+    } catch (networkErr: any) {
+      throw new IpcConnectionError(
+        `Cannot connect to JARVIS Core Daemon at ${this.devBridgeUrl}. Please verify 'python -m desktop.daemon' is running.`
+      );
     }
-    if (method === "jarvis.proactive.get_latest") {
-      return {
-        has_advisory: true,
-        trigger_type: "SESSION_START",
-        health_score: 92,
-        findings_count: 1,
-        suggestions: [
-          {
-            title: "Proactive Security Recommendation",
-            description: "Review repository dependencies for outdated versions.",
-            priority: "LOW",
-            category: "DEPENDENCY_UPGRADE",
-          },
-        ],
-        is_informational_only: true,
-      } as T;
+
+    if (!res.ok) {
+      throw new IpcConnectionError(
+        `JARVIS Daemon HTTP Dev Bridge returned HTTP ${res.status}: ${res.statusText}`
+      );
     }
-    return {} as T;
+
+    let jsonResp: any;
+    try {
+      jsonResp = await res.json();
+    } catch (parseErr: any) {
+      throw new IpcRpcError(`Invalid JSON response received from JARVIS Daemon: ${parseErr.message}`);
+    }
+
+    if (jsonResp.error) {
+      throw new IpcRpcError(
+        jsonResp.error.message || `RPC Error on '${method}'`,
+        jsonResp.error.code || -32603
+      );
+    }
+
+    if (jsonResp.result === undefined) {
+      throw new IpcRpcError(`No result field in response for method '${method}'.`);
+    }
+
+    return jsonResp.result as T;
   }
 
   async getStatus(): Promise<SystemStatus> {
@@ -120,27 +182,50 @@ export class JarvisIpcClient {
       user_name: userName,
       permission_level: "NORMAL",
     });
+    if (!res || !res.session_id) {
+      throw new IpcRpcError("Failed to initialize conversational session context with JARVIS daemon.");
+    }
     this.sessionId = res.session_id;
     return this.sessionId;
   }
 
+  async ensureSession(): Promise<string> {
+    if (!this.sessionId) {
+      return await this.createSession();
+    }
+    return this.sessionId;
+  }
+
   async processTurn(query: string): Promise<TurnResponse> {
-    return await this.invokeCommand<TurnResponse>("jarvis.turn.process", {
-      session_id: this.sessionId || "default",
+    const activeSessionId = await this.ensureSession();
+    const res = await this.invokeCommand<TurnResponse>("jarvis.turn.process", {
+      session_id: activeSessionId,
       query,
     });
+
+    if (!res || typeof res !== "object" || !res.status) {
+      throw new IpcRpcError("Malformed turn response received from JARVIS daemon.");
+    }
+    return res;
   }
 
   async respondToApproval(cardId: string, decision: "APPROVE" | "DENY"): Promise<TurnResponse> {
-    return await this.invokeCommand<TurnResponse>("jarvis.approval.respond", {
+    const activeSessionId = await this.ensureSession();
+    const res = await this.invokeCommand<TurnResponse>("jarvis.approval.respond", {
+      session_id: activeSessionId,
       card_id: cardId,
       decision,
     });
+    if (!res || typeof res !== "object") {
+      throw new IpcRpcError("Malformed approval response received from JARVIS daemon.");
+    }
+    return res;
   }
 
   async getLatestProactiveAdvisory(): Promise<ProactiveAdvisoryPayload> {
+    const activeSessionId = this.sessionId || "default";
     return await this.invokeCommand<ProactiveAdvisoryPayload>("jarvis.proactive.get_latest", {
-      session_id: this.sessionId || "default",
+      session_id: activeSessionId,
     });
   }
 
@@ -157,10 +242,11 @@ export class JarvisIpcClient {
   }
 
   async emergencyStop(): Promise<void> {
-    if ((window as any).__TAURI__ && (window as any).__TAURI__.core) {
+    if (this.isTauriRuntime()) {
       await (window as any).__TAURI__.core.invoke("trigger_emergency_stop");
     } else {
       await this.invokeCommand("jarvis.system.emergency_stop");
     }
   }
 }
+

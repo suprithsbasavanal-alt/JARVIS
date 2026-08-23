@@ -68,13 +68,26 @@ class JarvisApp {
       const status = await this.ipc.getStatus();
       this.hudModal.updateState(`L2 ${status.agent_state}`);
 
-      const advisory = await this.ipc.getLatestProactiveAdvisory();
-      this.proactiveWidget.update(advisory);
+      try {
+        const advisory = await this.ipc.getLatestProactiveAdvisory();
+        this.proactiveWidget.update(advisory);
+      } catch (advisoryErr) {
+        console.info("No initial proactive advisory:", advisoryErr);
+      }
 
-      const plan = await this.ipc.getActivePlan();
-      this.planWidget.update(plan);
-    } catch (e) {
-      console.warn("Initial daemon connection:", e);
+      try {
+        const plan = await this.ipc.getActivePlan();
+        this.planWidget.update(plan);
+      } catch (planErr) {
+        console.info("No active plan:", planErr);
+      }
+    } catch (e: any) {
+      console.warn("Initial daemon connection error:", e);
+      this.hudModal.updateState("DISCONNECTED");
+      this.conversationView.addMessage(
+        "assistant",
+        `⚠️ Daemon Disconnected: ${e.message || e}. Ensure 'python -m desktop.daemon' is running.`
+      );
     }
   }
 
@@ -87,17 +100,24 @@ class JarvisApp {
       if (response.requires_confirmation && response.approval_card) {
         this.hudModal.updateState("AWAITING CONFIRMATION");
         this.approvalModal.show(response.approval_card);
-      } else if (response.reply) {
+      } else if (response.reply && response.reply.trim()) {
         this.hudModal.updateState("IDLE");
         this.conversationView.addMessage("assistant", response.reply);
+      } else {
+        this.hudModal.updateState("ERROR");
+        this.conversationView.addMessage("assistant", "⚠️ Assistant returned an empty response.");
       }
 
       // Refresh proactive observations & plans
-      const advisory = await this.ipc.getLatestProactiveAdvisory();
-      this.proactiveWidget.update(advisory);
+      try {
+        const advisory = await this.ipc.getLatestProactiveAdvisory();
+        this.proactiveWidget.update(advisory);
+      } catch (_) {}
 
-      const plan = await this.ipc.getActivePlan();
-      this.planWidget.update(plan);
+      try {
+        const plan = await this.ipc.getActivePlan();
+        this.planWidget.update(plan);
+      } catch (_) {}
     } catch (err: any) {
       this.hudModal.updateState("ERROR");
       this.conversationView.addMessage("assistant", `⚠️ Error executing turn: ${err.message || err}`);
@@ -109,9 +129,8 @@ class JarvisApp {
     try {
       const response = await this.ipc.respondToApproval(cardId, decision);
       this.hudModal.updateState("IDLE");
-      if (response.reply) {
-        this.conversationView.addMessage("assistant", response.reply);
-      }
+      const replyText = response.reply || (response as any).message || (decision === "APPROVE" ? "Action executed successfully." : "Action was cancelled.");
+      this.conversationView.addMessage("assistant", replyText);
     } catch (err: any) {
       this.hudModal.updateState("ERROR");
       this.conversationView.addMessage("assistant", `⚠️ Approval handling error: ${err.message || err}`);

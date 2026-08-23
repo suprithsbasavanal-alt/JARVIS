@@ -131,6 +131,44 @@ class IPCServer:
             decision="SUCCESS",
         )
 
+    async def dispatch_rpc_payload(
+        self,
+        payload: dict[str, Any],
+        is_authenticated: bool = False,
+    ) -> tuple[dict[str, Any], bool]:
+        """Process a single JSON-RPC 2.0 payload and return (response_dict, new_authenticated_state)."""
+        req_id = payload.get("id")
+        method = payload.get("method")
+        params = payload.get("params", {})
+
+        if not method or not isinstance(method, str):
+            return self._build_jsonrpc_error(req_id, -32600, "Invalid Request: 'method' is required."), is_authenticated
+
+        # Require handshake with auth_token before executing other RPC commands
+        if not is_authenticated:
+            if method != "jarvis.handshake":
+                return self._build_jsonrpc_error(req_id, -32000, "Authentication required. Call jarvis.handshake first."), False
+
+            token = params.get("auth_token")
+            if token != self.auth_token:
+                return self._build_jsonrpc_error(req_id, -32001, "Authentication failed: Invalid auth_token."), False
+
+            result = await self._handle_handshake(params)
+            return {"jsonrpc": "2.0", "result": result, "id": req_id}, True
+
+        if method not in self._handlers:
+            return self._build_jsonrpc_error(req_id, -32601, f"Method not found: '{method}'."), True
+
+        try:
+            handler = self._handlers[method]
+            if asyncio.iscoroutinefunction(handler):
+                result = await handler(params)
+            else:
+                result = handler(params)
+            return {"jsonrpc": "2.0", "result": result, "id": req_id}, True
+        except Exception as err:
+            return self._build_jsonrpc_error(req_id, -32603, f"Internal error: {err}"), True
+
     async def _handle_connection(
         self,
         reader: asyncio.StreamReader,
@@ -152,45 +190,7 @@ class IPCServer:
                     await writer.drain()
                     continue
 
-                req_id = payload.get("id")
-                method = payload.get("method")
-                params = payload.get("params", {})
-
-                # Require handshake with auth_token before executing other RPC commands
-                if not client_authenticated:
-                    if method != "jarvis.handshake":
-                        response = self._build_jsonrpc_error(req_id, -32000, "Authentication required. Call jarvis.handshake first.")
-                        writer.write((json.dumps(response) + "\n").encode("utf-8"))
-                        await writer.drain()
-                        continue
-
-                    token = params.get("auth_token")
-                    if token != self.auth_token:
-                        response = self._build_jsonrpc_error(req_id, -32001, "Authentication failed: Invalid auth_token.")
-                        writer.write((json.dumps(response) + "\n").encode("utf-8"))
-                        await writer.drain()
-                        continue
-
-                    client_authenticated = True
-                    result = await self._handle_handshake(params)
-                    response = {"jsonrpc": "2.0", "result": result, "id": req_id}
-                    writer.write((json.dumps(response) + "\n").encode("utf-8"))
-                    await writer.drain()
-                    continue
-
-                if method not in self._handlers:
-                    response = self._build_jsonrpc_error(req_id, -32601, f"Method not found: '{method}'.")
-                else:
-                    try:
-                        handler = self._handlers[method]
-                        if asyncio.iscoroutinefunction(handler):
-                            result = await handler(params)
-                        else:
-                            result = handler(params)
-                        response = {"jsonrpc": "2.0", "result": result, "id": req_id}
-                    except Exception as err:
-                        response = self._build_jsonrpc_error(req_id, -32603, f"Internal error: {err}")
-
+                response, client_authenticated = await self.dispatch_rpc_payload(payload, client_authenticated)
                 writer.write((json.dumps(response, default=str) + "\n").encode("utf-8"))
                 await writer.drain()
         except Exception:
