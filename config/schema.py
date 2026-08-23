@@ -48,7 +48,7 @@ class SecurityConfig(BaseModel):
 
 class ModelTierConfig(BaseModel):
     """Configuration for a specific AI model tier."""
-    provider: Literal["mock", "local", "cloud"] = "mock"
+    provider: Literal["mock", "local", "ollama", "gguf", "cloud"] = "mock"
     model_name: str = "mock-model"
     endpoint: str | None = None
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
@@ -57,7 +57,7 @@ class ModelTierConfig(BaseModel):
 
 class ModelsConfig(BaseModel):
     """Model routing configuration across tiers."""
-    default_provider: Literal["mock", "local", "cloud"] = "mock"
+    default_provider: Literal["mock", "local", "ollama", "gguf", "cloud"] = "mock"
     fast_tier: ModelTierConfig = Field(
         default_factory=lambda: ModelTierConfig(model_name="mock-fast-v1", temperature=0.2)
     )

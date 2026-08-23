@@ -12,6 +12,7 @@ from model_routing.optimization.memory_guard import MemoryGuard
 from model_routing.optimization.token_optimizer import TokenOptimizer
 from model_routing.providers.local_quantized_provider import LocalQuantizedProvider
 from model_routing.providers.mock_provider import MockModelProvider
+from model_routing.providers.ollama_provider import OllamaModelProvider
 from model_routing.schemas import ChatMessage, ModelRequest, ModelResponse
 from security.sanitizer import Sanitizer
 
@@ -49,9 +50,19 @@ class ModelRouter:
         self.memory_guard.register_compaction_callback(self.response_cache.clear)
 
         self._providers: dict[str, BaseModelProvider] = {}
-        # Register default fallback mock provider
+        # Register default mock provider for hermetic testing
         self.register_provider("mock", MockModelProvider("mock"))
-        # Register high-performance local quantized GGUF provider
+        
+        # Register real Ollama local provider
+        ollama_prov = OllamaModelProvider(
+            endpoint=getattr(self.config.fast_tier, "endpoint", None),
+            model_name=getattr(self.config.fast_tier, "model_name", None),
+        )
+        self.register_provider("ollama", ollama_prov)
+        self.register_provider("local", ollama_prov)
+        self.register_provider("local-ollama", ollama_prov)
+
+        # Register GGUF provider
         local_quant_prov = LocalQuantizedProvider(
             quantization=self.perf_config.default_quantization,
             n_threads=self.perf_config.n_threads,
@@ -59,11 +70,15 @@ class ModelRouter:
             n_ctx=self.perf_config.max_context_tokens,
         )
         self.register_provider("local-quantized", local_quant_prov)
-        self.register_provider("local", local_quant_prov)
+        self.register_provider("gguf", local_quant_prov)
 
     def register_provider(self, name: str, provider: BaseModelProvider) -> None:
         """Register a model execution provider."""
         self._providers[name] = provider
+
+    def get_provider(self, name: str) -> BaseModelProvider | None:
+        """Retrieve a registered provider by name."""
+        return self._providers.get(name)
 
     def get_provider_for_tier(self, tier: ModelTier | Any) -> BaseModelProvider:
         """Resolve the appropriate provider backend for the requested tier."""
@@ -93,18 +108,45 @@ class ModelRouter:
         if tier_val == ModelTier.LOCAL_PRIVATE:
             if "local-quantized" in self._providers:
                 return self._providers["local-quantized"]
+            if "gguf" in self._providers:
+                return self._providers["gguf"]
             if "local" in self._providers:
                 return self._providers["local"]
 
-        provider = self._providers.get(tier_cfg.provider)
+        provider_key = getattr(tier_cfg, "provider", "mock")
+        provider = self._providers.get(provider_key)
 
         if not provider:
-            # Fall back to mock provider in development
+            # Fall back to mock provider only if explicitly requested or mock is available
             provider = self._providers.get("mock")
             if not provider:
-                raise ModelRoutingError(f"No provider available for tier '{getattr(tier, 'value', tier)}'")
+                raise ModelRoutingError(f"No provider available for tier '{getattr(tier, 'value', tier)}' (configured: '{provider_key}')")
 
         return provider
+
+    async def get_health_status(self) -> dict[str, Any]:
+        """Query and return active health metrics across all registered providers."""
+        provider_statuses: dict[str, Any] = {}
+        for name, prov in self._providers.items():
+            try:
+                is_healthy = await prov.is_healthy()
+                info = getattr(prov, "get_runtime_info", lambda: {})() or getattr(prov, "get_runtime_config", lambda: {})()
+                provider_statuses[name] = {
+                    "healthy": is_healthy,
+                    "provider_class": prov.__class__.__name__,
+                    "details": info,
+                }
+            except Exception as err:
+                provider_statuses[name] = {
+                    "healthy": False,
+                    "error": str(err),
+                }
+
+        fast_provider = self.get_provider_for_tier(ModelTier.FAST)
+        return {
+            "default_fast_provider": fast_provider.__class__.__name__,
+            "providers": provider_statuses,
+        }
 
     async def route(
         self,

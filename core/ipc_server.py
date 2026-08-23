@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 from agents.loop import AgentLoop
-from config.schema import PermissionLevel
+from config.schema import ModelTier, PermissionLevel
 from core.context import SessionContext
 from core.events import EventBus
 from core.exceptions import HumanConfirmationRequiredError, PermissionDeniedError
@@ -227,10 +227,24 @@ class IPCServer:
         }
 
     async def _handle_status(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Return system health, memory stats, and agent readiness."""
+        """Return system health, memory stats, agent readiness, and model routing runtime."""
+        model_health = {}
+        active_provider_name = "unknown"
+        active_model_name = "unknown"
+        try:
+            model_health = await self.agent_loop.router.get_health_status()
+            fast_prov = self.agent_loop.router.get_provider_for_tier(ModelTier.FAST)
+            active_provider_name = getattr(fast_prov, "provider_name", fast_prov.__class__.__name__)
+            active_model_name = getattr(fast_prov, "model_name", "fast-model")
+        except Exception as e:
+            model_health = {"error": str(e)}
+
         return {
             "status": "ONLINE",
             "agent_state": self.agent_loop.state.value,
+            "active_provider": active_provider_name,
+            "model_name": active_model_name,
+            "model_health": model_health,
             "registered_tools_count": len(self.agent_loop.tool_registry.list_tools()),
             "active_sessions_count": len(self._active_sessions),
             "pending_approvals_count": len(self._pending_approvals),

@@ -30,7 +30,13 @@ from tools.registry import ToolRegistry
 class JarvisDesktopDaemon:
     """Manages full lifecycle of JARVIS Desktop Core background daemon."""
 
-    def __init__(self, socket_path: str | Path | None = None, auth_token: str | None = None) -> None:
+    def __init__(
+        self,
+        socket_path: str | Path | None = None,
+        auth_token: str | None = None,
+        memory_db_path: str | Path | None = None,
+        model_provider: str | None = None,
+    ) -> None:
         self.socket_path = Path(socket_path or "/tmp/jarvis_daemon.sock")
         self.auth_token = auth_token or os.getenv("JARVIS_IPC_TOKEN", "jarvis-desktop-local-token")
 
@@ -41,9 +47,16 @@ class JarvisDesktopDaemon:
         # 2. Event Bus
         self.event_bus = EventBus()
 
-        # 3. Encrypted Memory Subsystem
+        # 3. Encrypted Memory Subsystem (Persistent by default in production)
+        storage_type = os.getenv("JARVIS_MEMORY_STORAGE", "sqlite_encrypted")
+        if storage_type == "mock_in_memory" or str(memory_db_path) == ":memory:":
+            db_target: Path | str = ":memory:"
+        else:
+            db_target = Path(memory_db_path or os.getenv("JARVIS_MEMORY_DB_PATH", "data/memory.db"))
+            db_target.parent.mkdir(parents=True, exist_ok=True)
+
         self.memory_manager = MemoryManager(
-            db_path=":memory:",
+            db_path=db_target,
             audit_logger=self.audit_logger,
         )
 
@@ -53,8 +66,35 @@ class JarvisDesktopDaemon:
         self.process_executor = ProcessSandboxExecutor()
         self._register_default_tools()
 
-        # 5. Model Routing
-        self.model_router = ModelRouter()
+        # 5. Model Routing & Provider Configuration
+        self.provider_type = (model_provider or os.getenv("JARVIS_MODEL_PROVIDER", "ollama")).lower()
+        self.ollama_base_url = os.getenv("JARVIS_OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+        self.ollama_model = os.getenv("JARVIS_OLLAMA_MODEL", "llama3:latest")
+
+        from config.schema import ModelsConfig, ModelTierConfig
+        if self.provider_type in ("ollama", "local"):
+            models_cfg = ModelsConfig(
+                default_provider="ollama",
+                fast_tier=ModelTierConfig(provider="ollama", model_name=self.ollama_model, endpoint=self.ollama_base_url),
+                reasoning_tier=ModelTierConfig(provider="ollama", model_name=self.ollama_model, endpoint=self.ollama_base_url),
+                local_private_tier=ModelTierConfig(provider="ollama", model_name=self.ollama_model, endpoint=self.ollama_base_url),
+            )
+        elif self.provider_type in ("gguf", "local-quantized"):
+            models_cfg = ModelsConfig(
+                default_provider="gguf",
+                fast_tier=ModelTierConfig(provider="gguf", model_name="gguf-model"),
+                reasoning_tier=ModelTierConfig(provider="gguf", model_name="gguf-model"),
+                local_private_tier=ModelTierConfig(provider="gguf", model_name="gguf-model"),
+            )
+        else:
+            models_cfg = ModelsConfig(
+                default_provider="mock",
+                fast_tier=ModelTierConfig(provider="mock", model_name="mock-fast-v1"),
+                reasoning_tier=ModelTierConfig(provider="mock", model_name="mock-reasoning-v1"),
+                local_private_tier=ModelTierConfig(provider="mock", model_name="mock-local-v1"),
+            )
+
+        self.model_router = ModelRouter(config=models_cfg)
         self.mock_provider = MockModelProvider("mock-primary")
         self.model_router.register_provider("mock-primary", self.mock_provider)
 
@@ -105,6 +145,24 @@ class JarvisDesktopDaemon:
         """Register default sandboxed desktop tools."""
         self.tool_registry.register_tool(MockFileReaderTool(mock_fs=self.mock_fs))
         self.tool_registry.register_tool(MockEmailSenderTool(mock_fs=self.mock_fs))
+
+    async def print_diagnostics(self) -> None:
+        """Output clear startup diagnostics without exposing secrets."""
+        health = await self.model_router.get_health_status()
+        prov_health = health.get("providers", {}).get(self.provider_type, {})
+        status_str = "AVAILABLE" if prov_health.get("healthy", False) else "UNAVAILABLE"
+        
+        print("=" * 60)
+        print("JARVIS DESKTOP CORE DAEMON INITIALIZATION")
+        print(f"Active Provider:    {self.provider_type}")
+        print(f"Configured Model:   {self.ollama_model if self.provider_type in ('ollama', 'local') else 'internal'}")
+        print(f"Endpoint:           {self.ollama_base_url if self.provider_type in ('ollama', 'local') else 'local-socket'}")
+        print(f"Provider Status:    {status_str}")
+        print(f"Fallback Active:    {self.provider_type == 'mock'}")
+        print(f"Memory DB:          {self.memory_manager.store.db_path}")
+        print(f"Unix Socket:        {self.socket_path}")
+        print(f"HTTP Dev Bridge:    http://{self.http_host}:{self.http_port}/rpc")
+        print("=" * 60)
 
     async def _handle_http_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """Handle HTTP JSON-RPC 2.0 requests for browser development diagnostic mode."""
@@ -214,6 +272,8 @@ class JarvisDesktopDaemon:
                 parameters={"error": str(e)},
                 decision="SKIPPED",
             )
+
+        await self.print_diagnostics()
 
         stop_event = asyncio.Event()
         loop = asyncio.get_running_loop()

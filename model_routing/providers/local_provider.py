@@ -1,23 +1,22 @@
-"""Local Offline Model Provider Interface (Ollama / Llama.cpp / vLLM)."""
+"""Local Offline Model Provider Interface (Ollama / Local Inference)."""
 
 from model_routing.base import BaseModelProvider
+from model_routing.providers.ollama_provider import OllamaModelProvider
 from model_routing.schemas import ModelRequest, ModelResponse
 
 
-class LocalModelProvider(BaseModelProvider):
-    """Abstract connector for local on-device inference engines."""
+class LocalModelProvider(OllamaModelProvider):
+    """Local on-device inference provider backed by Ollama engine."""
 
-    def __init__(self, endpoint: str = "http://127.0.0.1:11434", provider_name: str = "local-ollama") -> None:
-        super().__init__(provider_name)
-        self.endpoint = endpoint
-
-    async def generate(self, request: ModelRequest) -> ModelResponse:
-        # In Phase 0: Stubbed out to ensure safe hermetic execution
-        return ModelResponse(
-            model_name="local-stub",
-            provider_name=self.provider_name,
-            content="[LOCAL MODEL INFERENCE STUB: Phase 0 Safe Development Mode]",
+    def __init__(
+        self,
+        endpoint: str | None = None,
+        model_name: str | None = None,
+        provider_name: str = "local-ollama",
+    ) -> None:
+        super().__init__(
+            base_url=endpoint,
+            model_name=model_name,
+            provider_name=provider_name,
         )
 
-    async def is_healthy(self) -> bool:
-        return True
