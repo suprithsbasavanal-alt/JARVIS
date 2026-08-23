@@ -20,6 +20,21 @@ This document records the foundational architectural decisions, trade-off analys
 - [ADR-010: Secure Web Research Foundation, SSRF Defense, and Untrusted Web Content Isolation](#adr-010-secure-web-research-foundation-ssrf-defense-and-untrusted-web-content-isolation)
 - [ADR-011: Typed Search Provider Abstraction and Per-Result Security Filtering](#adr-011-typed-search-provider-abstraction-and-per-result-security-filtering)
 - [ADR-012: Secure Document Parsing (PDF/Markdown), Text Normalization, and Verifiable Citation Engine](#adr-012-secure-document-parsing-pdfmarkdown-text-normalization-and-verifiable-citation-engine)
+- [ADR-013: Local-Only Offline Voice Subsystem and Ephemeral Audio Buffer Architecture](#adr-013-local-only-offline-voice-subsystem-and-ephemeral-audio-buffer-architecture)
+
+---
+
+### ADR-013: Local-Only Offline Voice Subsystem and Ephemeral Audio Buffer Architecture
+- **Status**: Accepted
+- **Context**: Voice interaction presents severe privacy risks: continuous ambient microphone recording, unencrypted cloud speech transmission, permanent audio file accumulation on disk, and indirect prompt injection through acoustic channels.
+- **Decision**: Implement a **Local-Only, Privacy-First Voice Pipeline** with offline wake-word spotting (`BaseWakeWordDetector`), on-device streaming speech-to-text (`BaseSTTProvider`), local text-to-speech synthesis (`BaseTTSProvider`), bounded in-memory FIFO ring buffers (`AudioRingBuffer`, 5 MB max), **Zero Disk Audio Persistence**, **Untrusted Speech Sanitization (`InputSanitizer`)**, and **Audit Logging Without Raw Audio**.
+- **Rationale**:
+  1. Prevents eavesdropping and unauthorized recording by keeping all raw audio frames ephemerally in RAM and immediately wiping them upon turn completion.
+  2. Eliminates cloud surveillance and network exfiltration risks by ensuring zero audio bytes leave the local device.
+  3. Neutralizes adversarial speech prompt injection attacks before reaching LLM reasoning or tool execution.
+  4. Enforces non-repudiable audit logging while strictly omitting audio waveforms from audit records.
+- **Consequences**: Real-time voice processing requires local CPU/Metal compute resources rather than offloading to high-latency external cloud speech APIs.
+
 
 ---
 

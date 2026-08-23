@@ -194,3 +194,43 @@ class DocumentFormatError(DocumentError):
     pass
 
 
+# ==============================================================================
+# Phase 5 Voice Pipeline Exceptions
+# ==============================================================================
+
+class VoiceError(JarvisError):
+    """Base exception for voice pipeline and audio operations."""
+    pass
+
+
+class WakeWordDetectionError(VoiceError):
+    """Raised when wake-word detection engine encounters runtime or parsing failure."""
+    pass
+
+
+class STTTranscriptionError(VoiceError):
+    """Raised when speech-to-text transcription fails or receives malformed audio."""
+    pass
+
+
+class TTSSynthesisError(VoiceError):
+    """Raised when text-to-speech audio synthesis fails."""
+    pass
+
+
+class VoiceBufferOverflowError(SecurityError, VoiceError):
+    """Raised when in-memory audio ring buffer exceeds configured safety byte limit."""
+    pass
+
+
+class VoiceTimeoutError(ToolTimeoutError, VoiceError):
+    """Raised when voice turn, wake-word listen, or transcription times out."""
+    pass
+
+
+class VoicePermissionDeniedError(PermissionDeniedError, VoiceError):
+    """Raised when microphone or voice interaction is denied by active security policy."""
+    pass
+
+
+
