@@ -259,3 +259,32 @@ data class EmergencyStopResult(
     val status: String,
     @SerialName("revoked_approvals") val revokedApprovals: Int
 )
+
+// ==========================================
+// DTOs for Phase 9 External Services
+// ==========================================
+
+@Serializable
+data class ServiceMetadataDto(
+    @SerialName("service_id") val serviceId: String,
+    val name: String,
+    val description: String,
+    val capabilities: List<String> = emptyList(),
+    val version: String = "1.0.0",
+    @SerialName("auth_type") val authType: String = "OAUTH2",
+    @SerialName("is_enabled") val isEnabled: Boolean = true,
+    val status: String = "CONNECTED"
+)
+
+@Serializable
+data class ServiceListResult(
+    val services: List<ServiceMetadataDto> = emptyList()
+)
+
+@Serializable
+data class ServiceStatusResult(
+    @SerialName("service_id") val serviceId: String? = null,
+    val status: String? = null,
+    val statuses: Map<String, String> = emptyMap()
+)
+

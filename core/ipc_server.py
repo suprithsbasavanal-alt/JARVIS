@@ -20,6 +20,7 @@ from intelligence.plan_generator import StructuredPlan
 from intelligence.runtime_listener import ProactiveRuntimeBridge
 from security.audit_logger import AuditLogger
 from security.permissions import ApprovalCard, ApprovalToken, PermissionEngine
+from services.registry import ServiceRegistry
 
 
 class IPCServer:
@@ -34,12 +35,14 @@ class IPCServer:
         audit_logger: AuditLogger,
         socket_path: str | Path | None = None,
         auth_token: str | None = None,
+        service_registry: ServiceRegistry | None = None,
     ) -> None:
         self.agent_loop = agent_loop
         self.event_bus = event_bus
         self.runtime_bridge = runtime_bridge
         self.permission_engine = permission_engine
         self.audit_logger = audit_logger
+        self.service_registry = service_registry or ServiceRegistry(audit_logger=audit_logger)
         self.socket_path = Path(socket_path or "/tmp/jarvis_daemon.sock")
         self.auth_token = auth_token or str(uuid4())
 
@@ -62,6 +65,10 @@ class IPCServer:
             "jarvis.plan.get_active": self._handle_plan_get_active,
             "jarvis.plan.update_step": self._handle_plan_update_step,
             "jarvis.system.emergency_stop": self._handle_emergency_stop,
+            "jarvis.services.list": self._handle_services_list,
+            "jarvis.services.status": self._handle_services_status,
+            "jarvis.services.capabilities": self._handle_services_capabilities,
+            "jarvis.services.revoke": self._handle_services_revoke,
         }
 
     async def start(self) -> None:
@@ -473,3 +480,32 @@ class IPCServer:
             "revoked_approvals_count": revoked_count,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+
+    def _handle_services_list(self, params: dict[str, Any]) -> dict[str, Any]:
+        """List registered services with safe metadata."""
+        return {"services": self.service_registry.list_services()}
+
+    async def _handle_services_status(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Return health status for a specific service or all registered services."""
+        service_id = params.get("service_id")
+        if service_id:
+            adapter = self.service_registry.get(service_id)
+            if not adapter:
+                raise ValueError(f"Service '{service_id}' is not registered.")
+            status = await adapter.health_check()
+            return {"service_id": service_id, "status": status.value}
+        statuses = await self.service_registry.health_check_all()
+        return {"statuses": statuses}
+
+    def _handle_services_capabilities(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Return declared capabilities for a given service."""
+        service_id = str(params.get("service_id", ""))
+        caps = self.service_registry.get_capabilities(service_id)
+        return {"service_id": service_id, "capabilities": caps}
+
+    async def _handle_services_revoke(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Revoke a service, wiping credentials and disabling execution."""
+        service_id = str(params.get("service_id", ""))
+        await self.service_registry.revoke(service_id)
+        return {"service_id": service_id, "status": "REVOKED"}
+

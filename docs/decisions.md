@@ -369,3 +369,21 @@ This document records the foundational architectural decisions, trade-off analys
   3. Guarantees deterministic, memory-safe, and bounded resource utilization on Android devices.
 - **Consequences**: Android client is fully production-hardened, private, fail-closed, and compliant with enterprise Android security standards.
 
+---
+
+### ADR-022: Secure Service Adapter Architecture, Capability Boundaries & Credential Isolation
+- **Status**: Accepted
+- **Context**: Enabling personal service integrations (Gmail, Calendar, WhatsApp, Telegram, Apple Notes) requires a modular, auditable, and capability-constrained connector architecture that prevents autonomous privilege escalation, credential leakage, undeclared capability access, and unbounded execution delays.
+- **Decision**: Implement a **Centralized Service Registry with Capability-Enforced Adapters and Platform Credential Isolation**:
+  1. *Typed Adapter & Capability Contract (`BaseServiceAdapter`)*: Every external connector implements explicit declared capabilities (`READ`, `SEARCH`, `CREATE`, `UPDATE`, `DELETE`, `SEND`, `EXECUTE`). Requests for undeclared capabilities are rejected before dispatch.
+  2. *HITL Permission Bridge (`ServicePermissionBridge`)*: Map capabilities to permission tiers. All state-modifying or outbound communication capabilities (`SEND`, `DELETE`, `CREATE`, `UPDATE`, `EXECUTE`) are classified as `SENSITIVE` and strictly require interactive Human-in-the-Loop (`ApprovalCard`) authorization and single-use `ApprovalToken` validation.
+  3. *Credential Boundary (`BaseCredentialProvider`)*: Secrets (API keys, OAuth tokens, client secrets) are managed exclusively by credential providers, never stored in the registry or adapter metadata, and never exposed in `__repr__`, metadata dictionaries, IPC responses, or audit logs.
+  4. *Non-Repudiable Chained Audit Logging*: Every service operation and administrative change generates a SHA-256 chained audit log entry with automated parameter secret sanitization (`[REDACTED]`).
+  5. *Fault Isolation & Bounded Monitoring*: Asynchronous timeouts (15s execution, 3s health check) isolate external network degradation from blocking the core `AgentLoop`.
+- **Rationale**:
+  1. Guarantees that external services cannot be accessed without explicit permission and auditability.
+  2. Prevents secret leakage across application layers and IPC bridges.
+  3. Preserves fail-closed HITL and emergency-stop safety invariants across all personal service connectors.
+- **Consequences**: External service ecosystem can scale to diverse third-party APIs while maintaining strict security and privacy boundaries.
+
+
