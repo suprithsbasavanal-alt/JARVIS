@@ -328,5 +328,23 @@ This document records the foundational architectural decisions, trade-off analys
   4. Preserves fail-closed HITL and Emergency Stop invariants across network boundaries.
 - **Consequences**: Network transport is authenticated, encrypted, isolated, and non-repudiable with complete SHA-256 chained audit logs.
 
+---
 
-
+### ADR-020: Android ↔ macOS Secure Session Lifecycle, Connection State Machine & Live JARVIS Communication
+- **Status**: Accepted
+- **Context**: Real-time communication between the Android Companion Client and the JARVIS macOS daemon requires reliable connection lifecycle management, automated keepalive/heartbeat detection, bounded reconnection with exponential backoff, request-response correlation, and robust error handling without exposing host secrets, leaking private keys, or bypassing Human-in-the-Loop (HITL) authorization gates.
+- **Decision**: Implement a **Strict Lifecycle Connection State Machine** and **Typed JSON-RPC 2.0 Live Communication Layer**:
+  1. *Connection State Tracking*: Maintain explicit states (`DISCONNECTED`, `CONNECTING`, `AUTHENTICATING`, `CONNECTED`, `RECONNECTING`, `REVOKED`, `ERROR`) exposed via Kotlin `StateFlow<ConnectionState>`.
+  2. *Periodic Authenticated Heartbeats*: Transmit `jarvis.heartbeat` every 15s to monitor connection health; transition to `RECONNECTING` upon socket loss or timeout.
+  3. *Bounded Exponential Backoff*: Reconnection attempts follow exponential backoff (1s initial delay up to 30s max, 2.0x multiplier, max 5 attempts) and halt immediately upon device revocation or explicit user disconnect.
+  4. *Request-Response Correlation & Payload Protection*: Match request and response identifiers (`response.id == request.id`), enforce strict 5 MB payload limits on incoming JSON-RPC lines to prevent DoS memory exhaustion, and handle JSON-RPC errors via typed `JsonRpcException` without exposing host daemon stack traces.
+  5. *Preservation of Core Safety Invariants*:
+     - **HITL Gate**: Network authentication does NOT grant permission to execute sensitive tools; sensitive operations require explicit interactive `ApprovalCard` approval and generate single-use `ApprovalToken`. Denial terminates execution.
+     - **Emergency Stop**: Android companion can trigger `jarvis.system.emergency_stop` to immediately revoke all active approval tokens and cancel in-flight operations.
+     - **Informational Proactive**: Proactive advisories carry `is_informational_only = true` and cannot trigger tool execution on Android or macOS.
+     - **Secret Isolation**: Responses never transmit host daemon auth tokens, API keys, or private cryptographic material.
+- **Rationale**:
+  1. Prevents connection leaks, busy-loop thread exhaustion, and unhandled network drops.
+  2. Guarantees that revoked companion devices cannot reconnect or access JARVIS core.
+  3. Provides an end-to-end typed, reactive architecture from Android Jetpack Compose UI down to Python `AgentLoop`.
+- **Consequences**: Android companion client functions reliably across local network disconnections while preserving all security invariants.

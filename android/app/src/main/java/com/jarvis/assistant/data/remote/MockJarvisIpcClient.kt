@@ -5,35 +5,61 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import java.util.UUID
 
 /**
  * Hermetic in-memory mock IPC client implementing the full JARVIS protocol.
- * Used for offline development, previewing, and automated unit testing in Phase 8.1.
+ * Used for offline development, previewing, and automated unit testing in Phase 8.
  */
 class MockJarvisIpcClient(
-    private val simulatedLatencyMs: Long = 50L,
+    private val simulatedLatencyMs: Long = 10L,
     private val initialAuthToken: String = "mock-companion-token-12345"
 ) : JarvisIpcClient {
 
-    private val _isConnected = MutableStateFlow(true)
-    override val isConnected: Flow<Boolean> = _isConnected.asStateFlow()
+    private val _connectionState = MutableStateFlow(ConnectionState.CONNECTED)
+    override val connectionState: Flow<ConnectionState> = _connectionState.asStateFlow()
+    override val isConnected: Flow<Boolean> = _connectionState.map { it == ConnectionState.CONNECTED }
 
-    private var isAuthenticated = false
+    private var isAuthenticated = true
     private var activeSessionId: String? = null
     private var pendingApprovalCard: ApprovalCardDto? = null
     private var currentPlan: StructuredPlanDto = createDefaultMockPlan()
 
+    var shouldSimulateRevocation = false
+    var shouldSimulateError = false
+
     override suspend fun handshake(authToken: String): HandshakeResult {
         delay(simulatedLatencyMs)
-        return if (authToken.isNotBlank()) {
+        if (shouldSimulateRevocation) {
+            _connectionState.value = ConnectionState.REVOKED
+            return HandshakeResult(authenticated = false)
+        }
+        if (shouldSimulateError) {
+            _connectionState.value = ConnectionState.ERROR
+            return HandshakeResult(authenticated = false)
+        }
+
+        return if (authToken.isNotBlank() || initialAuthToken.isNotBlank()) {
             isAuthenticated = true
-            _isConnected.value = true
-            HandshakeResult(authenticated = true, version = "0.8.1", daemon = "jarvis-daemon-mock")
+            _connectionState.value = ConnectionState.CONNECTED
+            HandshakeResult(authenticated = true, version = "0.8.3", daemon = "jarvis-daemon-mock")
         } else {
             isAuthenticated = false
+            _connectionState.value = ConnectionState.ERROR
             HandshakeResult(authenticated = false)
         }
+    }
+
+    override suspend fun heartbeat(): HeartbeatResult {
+        delay(simulatedLatencyMs)
+        checkAuth()
+        return HeartbeatResult(
+            status = "ALIVE",
+            timestamp = "2026-08-23T09:00:00Z",
+            pairedDevices = 1,
+            activeSessions = if (activeSessionId != null) 1 else 0
+        )
     }
 
     override suspend fun getStatus(): StatusResult {
@@ -41,11 +67,11 @@ class MockJarvisIpcClient(
         checkAuth()
         return StatusResult(
             status = "HEALTHY",
-            version = "0.8.1",
+            version = "0.8.3",
             agentState = "IDLE",
             activeSessions = if (activeSessionId != null) 1 else 0,
             pendingApprovals = if (pendingApprovalCard != null) 1 else 0,
-            proactiveEvaluations = 12,
+            pairedDevices = 1,
             activePlans = 1
         )
     }
@@ -62,13 +88,13 @@ class MockJarvisIpcClient(
         )
     }
 
-    override suspend fun getSession(sessionId: String): Map<String, Any> {
+    override suspend fun getSession(sessionId: String): SessionGetResult {
         delay(simulatedLatencyMs)
         checkAuth()
-        return mapOf(
-            "session_id" to sessionId,
-            "user_display_name" to "Suprith",
-            "history_len" to 4
+        return SessionGetResult(
+            sessionId = sessionId,
+            userDisplayName = "Suprith",
+            historyLen = 4
         )
     }
 
@@ -85,6 +111,7 @@ class MockJarvisIpcClient(
                 actionType = "EXTERNAL_COMMUNICATION",
                 targetResource = "mailto:stakeholder@example.com",
                 reasoningSummary = "User requested sending an outbound status email.",
+                riskSummary = "Outbound email will be transmitted to external recipient.",
                 expiresAt = "2026-08-23T09:10:00Z"
             )
             pendingApprovalCard = card
@@ -158,65 +185,41 @@ class MockJarvisIpcClient(
     }
 
     override suspend fun disconnect() {
-        _isConnected.value = false
+        delay(simulatedLatencyMs)
         isAuthenticated = false
+        _connectionState.value = ConnectionState.DISCONNECTED
     }
 
     private fun checkAuth() {
         if (!isAuthenticated) {
-            throw IllegalStateException("Client is unauthenticated. Must execute jarvis.handshake first.")
+            throw IllegalStateException("Mock client is not authenticated. Call handshake() first.")
         }
     }
 
     private fun createDefaultMockPlan(): StructuredPlanDto {
         return StructuredPlanDto(
-            planId = "plan-android-companion-bootstrap",
+            planId = "plan-001",
             title = "Phase 8: Android Companion Client Mastery",
-            goal = "Develop native Kotlin Jetpack Compose client with hardware keystore security and real-time synchronization.",
-            category = "ENGINEERING_ROADMAP",
+            goal = "Develop native Kotlin + Jetpack Compose companion HUD with biometric confirmation.",
+            category = "ARCHITECTURE",
             estimatedHours = 12.0,
             isInformationalOnly = true,
             milestones = listOf(
                 PlanMilestoneDto(
                     milestoneId = "m1",
-                    title = "Phase 8.1: Architecture & Foundation",
+                    title = "Scaffolding & Architecture",
                     steps = listOf(
-                        PlanStepDto(
-                            stepNumber = 1,
-                            description = "Scaffold Gradle, Kotlin 1.9, and Jetpack Compose dependencies",
-                            deliverable = "android/build.gradle.kts and app module",
-                            isCompleted = true
-                        ),
-                        PlanStepDto(
-                            stepNumber = 2,
-                            description = "Define JSON-RPC 2.0 DTO contracts for all 10 IPC methods",
-                            deliverable = "JsonRpcModels.kt",
-                            isCompleted = true
-                        ),
-                        PlanStepDto(
-                            stepNumber = 3,
-                            description = "Implement Stitch Aether mobile UI theme and preview dashboard",
-                            deliverable = "Theme.kt, DashboardScreen.kt",
-                            isCompleted = true
-                        )
+                        PlanStepDto(1, "Create Gradle build scripts", "build.gradle.kts", true),
+                        PlanStepDto(2, "Implement JSON-RPC DTOs", "JsonRpcModels.kt", true),
+                        PlanStepDto(3, "Implement Android Keystore manager", "KeystoreManager.kt", true)
                     )
                 ),
                 PlanMilestoneDto(
                     milestoneId = "m2",
-                    title = "Phase 8.2: Hardware Security & Local Transport",
+                    title = "Stitch Aether HUD & Security",
                     steps = listOf(
-                        PlanStepDto(
-                            stepNumber = 4,
-                            description = "Integrate Android Keystore StrongBox key generation",
-                            deliverable = "KeystoreManager.kt",
-                            isCompleted = false
-                        ),
-                        PlanStepDto(
-                            stepNumber = 5,
-                            description = "Implement BiometricPrompt gate for HITL sensitive approvals",
-                            deliverable = "BiometricAuthManager.kt",
-                            isCompleted = false
-                        )
+                        PlanStepDto(4, "Build Dashboard and Chat screens", "DashboardScreen.kt", true),
+                        PlanStepDto(5, "Integrate BiometricPrompt approval dialog", "ApprovalDialog.kt", false)
                     )
                 )
             )

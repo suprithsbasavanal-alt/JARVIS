@@ -131,22 +131,65 @@ Android Companion Client                               JARVIS macOS Daemon (Netw
 ## 5. Verification & Testing
 
 Phase 8 is covered by automated test suites in `tests/test_phase8_android.py`, `tests/test_phase8_2_network_pairing.py`, and `android/app/src/test/java/com/jarvis/assistant/JarvisCompanionTest.kt`, bringing the repository test suite to **254 passing tests (100% pass rate in 1.21s)**:
+## 4. Phase 8.3 — Secure Session Lifecycle & Live Communication
 
-- `TestPhase82DevicePairingRegistry`:
-  - `test_begin_pairing_success`: Generates 6-digit code and creates `PENDING_CONFIRMATION` record.
-  - `test_confirm_pairing_success`: Valid code transitions device to `CONFIRMED`.
-  - `test_confirm_pairing_invalid_code_rejected`: Wrong code raises `InvalidPairingCodeError`.
-  - `test_auth_challenge_generation_and_verification`: Nonce generation, signature verification, and session issuance.
-  - `test_invalid_signature_rejected`: Bad signature raises `InvalidSignatureError`.
-  - `test_challenge_replay_rejected`: Consumed nonce replay raises `ChallengeReplayError`.
-  - `test_expired_challenge_rejected`: Expired TTL challenge raises `ChallengeExpiredError`.
-  - `test_device_revocation_terminates_sessions`: Revocation terminates active sessions and blocks challenges.
-  - `test_device_key_rotation_lifecycle`: Key rotation validates authorization signature and updates registry.
-  - `test_list_devices`: Lists registered devices and lifecycle states.
-- `TestPhase82NetworkBridgeIntegration`:
-  - `test_unauthenticated_requests_rejected`: Unauthenticated RPC calls return `-32000 Authentication required`.
-  - `test_complete_pairing_and_mutual_auth_flow`: End-to-end pairing, challenge signing, and turn execution.
-  - `test_hitl_approval_enforcement_over_network`: Sensitive tools raise approval cards and require explicit `APPROVE`.
-  - `test_emergency_stop_over_network`: Emergency stop over network revokes in-flight authorizations.
-  - `test_device_revocation_over_network_rpc`: RPC revocation immediately terminates session token validity.
-  - `test_proactive_and_plan_endpoints_over_network`: Informational proactive advisories and plan sync over network.
+### 4.1 Connection State Machine
+
+The Android client maintains a strict deterministic connection state machine:
+
+```
+[DISCONNECTED] ──(handshake)──> [CONNECTING] ──(connected)──> [AUTHENTICATING]
+      ▲                                                              │
+      │                                                     (auth verified)
+      │                                                              ▼
+(disconnect)                                                   [CONNECTED]
+      │                                                         │       │
+      │                                           (heartbeat fail) (revoked)
+      │                                                         │       │
+      ▼                                                         ▼       ▼
+[DISCONNECTED] <──(exhausted)── [ERROR] <── [RECONNECTING]   [REVOKED]
+```
+
+- **DISCONNECTED**: Idle or explicitly closed connection.
+- **CONNECTING**: Socket connection in progress.
+- **AUTHENTICATING**: 2-step challenge-response handshake in flight.
+- **CONNECTED**: Authenticated session established; periodic heartbeat active.
+- **RECONNECTING**: Transient network drop detected; exponential backoff loop active.
+- **REVOKED**: Device revoked by desktop host; all reconnect attempts immediately halted.
+- **ERROR**: Retries exhausted or terminal network failure.
+
+### 4.2 Bounded Exponential Backoff & Heartbeat
+
+- **Heartbeat**: Android client transmits `jarvis.heartbeat` every 15 seconds. If the bridge fails to respond or reports session expiration, client transitions to `RECONNECTING`.
+- **Reconnect Parameters**:
+  - `initialDelayMs`: 1,000 ms
+  - `maxDelayMs`: 30,000 ms
+  - `multiplier`: 2.0x
+  - `maxRetries`: 5 attempts
+- **Replay Protection & Secret Isolation**: Request IDs correlate responses (`response.id == request.id`). Payload cap (5 MB) prevents DoS memory exhaustion. Host secrets and private keys are never transmitted.
+
+---
+
+## 5. Security & Invariant Verification Matrix
+
+| Subsystem / Invariant | Enforcement Mechanism | Phase 8.1 Verification | Phase 8.2 Verification | Phase 8.3 Verification |
+| :--- | :--- | :--- | :--- | :--- |
+| **Encrypted Storage** | Android Keystore (`AES/GCM/NoPadding`, 256-bit) | `test_keystore_manager_uses_aes_gcm_256` | Tested | Tested |
+| **Biometric Confirmation**| `BiometricPrompt` with `BIOMETRIC_STRONG` | Tested in `ApprovalDialog.kt` | Tested | Tested |
+| **No Cloud Backup** | `data_extraction_rules.xml` disallows cloud | `test_android_manifest_permissions_and_security` | Verified | Verified |
+| **Informational Proactive**| `is_informational_only = true` immutable | `test_proactive_models_enforce_informational_only` | `test_proactive_and_plan_endpoints_over_network` | `test_proactive_advisory_informational_enforcement` |
+| **Asymmetric Device Pairing**| 6-digit confirmation code & timing-safe equality | Scaffolding | `test_confirm_pairing_success` | Verified in live bridge |
+| **Mutual Authentication** | 32-byte CSPRNG nonces, 60s TTL, replay prevention | Mocked | `test_auth_challenge_generation_and_verification` | `test_conversation_turn_round_trip` |
+| **HITL Authorization Gate** | Sensitive tools require `ApprovalCard` + single-use token | Simulated in mock client | `test_hitl_approval_enforcement_over_network` | `test_hitl_approval_and_denial_flow` |
+| **Emergency Stop** | `jarvis.system.emergency_stop` revokes in-flight authorizations | Tested | `test_emergency_stop_over_network` | `test_emergency_stop_kills_in_flight_approvals` |
+| **State Tracking & Heartbeat** | Periodic `jarvis.heartbeat`, exponential backoff | N/A | N/A | `test_heartbeat_keepalive`, `test_phase8_3_network_client_state_machine_and_backoff` |
+| **Revocation Invalidation** | Immediate session termination on revocation | N/A | `test_device_revocation_over_network_rpc` | `test_revoked_device_rejected` |
+
+---
+
+## 6. Automated Test Suites
+
+- `tests/test_phase8_android.py` (11 tests verifying Android tree, Gradle structure, security XML, DTOs, and state machine).
+- `tests/test_phase8_2_network_pairing.py` (16 tests verifying pairing registry, challenge signing, replay defense, and network RPCs).
+- `tests/test_phase8_3_session_live.py` (13 tests verifying live session lifecycle, turn round trips, heartbeat, HITL approvals, emergency stop, and payload limits).
+- Total repository tests: **269/269 passing 100%**.

@@ -84,6 +84,7 @@ class NetworkBridgeServer:
             "jarvis.network.device.list": self._handle_device_list,
             # Authenticated Operational Endpoints
             "jarvis.status": self._handle_status,
+            "jarvis.heartbeat": self._handle_heartbeat,
             "jarvis.session.create": self._handle_session_create,
             "jarvis.session.get": self._handle_session_get,
             "jarvis.turn.process": self._handle_turn_process,
@@ -93,6 +94,8 @@ class NetworkBridgeServer:
             "jarvis.plan.update_step": self._handle_plan_update_step,
             "jarvis.system.emergency_stop": self._handle_emergency_stop,
         }
+
+    MAX_PAYLOAD_BYTES = 5 * 1024 * 1024  # 5 MB maximum JSON-RPC message size
 
     async def start(self) -> None:
         """Start listening on the configured network interface."""
@@ -104,6 +107,7 @@ class NetworkBridgeServer:
             host=self.host,
             port=self.port,
             ssl=self.ssl_context,
+            limit=self.MAX_PAYLOAD_BYTES * 2,
         )
         self._is_running = True
 
@@ -158,8 +162,29 @@ class NetworkBridgeServer:
 
         try:
             while self._is_running:
-                line = await reader.readline()
+                try:
+                    line = await reader.readline()
+                except (ValueError, asyncio.LimitOverrunError):
+                    err_resp = {
+                        "jsonrpc": "2.0",
+                        "id": None,
+                        "error": {"code": -32600, "message": "Payload exceeds maximum allowed size."},
+                    }
+                    writer.write((json.dumps(err_resp) + "\n").encode("utf-8"))
+                    await writer.drain()
+                    break
+
                 if not line:
+                    break
+
+                if len(line) > self.MAX_PAYLOAD_BYTES:
+                    err_resp = {
+                        "jsonrpc": "2.0",
+                        "id": None,
+                        "error": {"code": -32600, "message": "Payload exceeds maximum allowed size."},
+                    }
+                    writer.write((json.dumps(err_resp) + "\n").encode("utf-8"))
+                    await writer.drain()
                     break
 
                 raw_msg = line.decode("utf-8").strip()
@@ -360,12 +385,20 @@ class NetworkBridgeServer:
     def _handle_status(self, params: dict[str, Any]) -> dict[str, Any]:
         return {
             "status": "HEALTHY",
-            "version": "0.8.2",
+            "version": "0.8.3",
             "agent_state": "IDLE",
             "active_sessions": len(self._active_sessions),
             "pending_approvals": len(self._pending_approvals),
             "paired_devices": len([d for d in self.pairing_registry.list_devices() if d.status == DeviceStatus.CONFIRMED]),
             "active_plans": len(self._active_plans),
+        }
+
+    def _handle_heartbeat(self, params: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "status": "ALIVE",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "paired_devices": len([d for d in self.pairing_registry.list_devices() if d.status == DeviceStatus.CONFIRMED]),
+            "active_sessions": len(self._active_sessions),
         }
 
     def _handle_session_create(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -387,10 +420,15 @@ class NetworkBridgeServer:
         if not session_id or session_id not in self._active_sessions:
             raise ValueError(f"Session '{session_id}' not found.")
         ctx = self._active_sessions[session_id]
+        history_len = (
+            len(self.agent_loop.memory.working_memory.get_messages())
+            if hasattr(self.agent_loop, "memory") and self.agent_loop.memory
+            else 0
+        )
         return {
             "session_id": ctx.session_id,
             "user_display_name": ctx.user_display_name,
-            "history_len": len(self.agent_loop.working_memory.messages),
+            "history_len": history_len,
         }
 
     async def _handle_turn_process(self, params: dict[str, Any]) -> dict[str, Any]:

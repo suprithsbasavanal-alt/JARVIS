@@ -1,6 +1,7 @@
 package com.jarvis.assistant.data.repository
 
 import com.jarvis.assistant.data.model.*
+import com.jarvis.assistant.data.remote.ConnectionState
 import com.jarvis.assistant.data.remote.JarvisIpcClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 class JarvisRepository(
     private val ipcClient: JarvisIpcClient
 ) {
+    val connectionState: Flow<ConnectionState> = ipcClient.connectionState
     val isConnected: Flow<Boolean> = ipcClient.isConnected
 
     private val _currentSession = MutableStateFlow<SessionCreateResult?>(null)
@@ -20,7 +22,7 @@ class JarvisRepository(
     private val _activePlan = MutableStateFlow<StructuredPlanDto?>(null)
     val activePlan: Flow<StructuredPlanDto?> = _activePlan.asStateFlow()
 
-    suspend fun initializeConnection(authToken: String): Boolean {
+    suspend fun initializeConnection(authToken: String = ""): Boolean {
         val result = ipcClient.handshake(authToken)
         if (result.authenticated) {
             val session = ipcClient.createSession("Suprith")
@@ -31,8 +33,16 @@ class JarvisRepository(
         return false
     }
 
+    suspend fun sendHeartbeat(): HeartbeatResult {
+        return ipcClient.heartbeat()
+    }
+
     suspend fun getStatus(): StatusResult {
         return ipcClient.getStatus()
+    }
+
+    suspend fun getSession(sessionId: String): SessionGetResult {
+        return ipcClient.getSession(sessionId)
     }
 
     suspend fun sendQuery(query: String): TurnProcessResult {
@@ -64,5 +74,10 @@ class JarvisRepository(
 
     suspend fun triggerEmergencyStop(): EmergencyStopResult {
         return ipcClient.emergencyStop()
+    }
+
+    suspend fun disconnect() {
+        _currentSession.value = null
+        ipcClient.disconnect()
     }
 }

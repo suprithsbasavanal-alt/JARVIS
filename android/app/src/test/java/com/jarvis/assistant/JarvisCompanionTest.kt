@@ -1,8 +1,10 @@
 package com.jarvis.assistant
 
 import com.jarvis.assistant.data.model.*
+import com.jarvis.assistant.data.remote.ConnectionState
 import com.jarvis.assistant.data.remote.MockJarvisIpcClient
 import com.jarvis.assistant.data.repository.JarvisRepository
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Before
@@ -23,13 +25,16 @@ class JarvisCompanionTest {
     fun testHandshakeSuccess() = runBlocking {
         val result = mockClient.handshake("test-token-valid")
         assertTrue(result.authenticated)
-        assertEquals("0.8.1", result.version)
+        assertEquals("0.8.3", result.version)
+        assertEquals(ConnectionState.CONNECTED, mockClient.connectionState.first())
     }
 
     @Test
     fun testHandshakeEmptyTokenFails() = runBlocking {
-        val result = mockClient.handshake("")
+        val client = MockJarvisIpcClient(simulatedLatencyMs = 0L, initialAuthToken = "")
+        val result = client.handshake("")
         assertFalse(result.authenticated)
+        assertEquals(ConnectionState.ERROR, client.connectionState.first())
     }
 
     @Test
@@ -39,6 +44,25 @@ class JarvisCompanionTest {
         val status = repository.getStatus()
         assertEquals("HEALTHY", status.status)
         assertEquals("IDLE", status.agentState)
+        assertEquals(ConnectionState.CONNECTED, repository.connectionState.first())
+    }
+
+    @Test
+    fun testHeartbeatVerification() = runBlocking {
+        repository.initializeConnection("auth-valid-token")
+        val hb = repository.sendHeartbeat()
+        assertEquals("ALIVE", hb.status)
+        assertNotNull(hb.timestamp)
+    }
+
+    @Test
+    fun testSessionCreateAndGet() = runBlocking {
+        repository.initializeConnection("auth-valid-token")
+        val session = repository.currentSession.first()
+        assertNotNull(session)
+        val fetched = repository.getSession(session!!.sessionId)
+        assertEquals(session.sessionId, fetched.sessionId)
+        assertEquals("Suprith", fetched.userDisplayName)
     }
 
     @Test
@@ -110,6 +134,22 @@ class JarvisCompanionTest {
         val stopRes = repository.triggerEmergencyStop()
         assertEquals("STOPPED", stopRes.status)
         assertEquals(1, stopRes.revokedApprovals)
+    }
+
+    @Test
+    fun testDeviceRevocationStateTransition() = runBlocking {
+        mockClient.shouldSimulateRevocation = true
+        val res = mockClient.handshake("test-token")
+        assertFalse(res.authenticated)
+        assertEquals(ConnectionState.REVOKED, mockClient.connectionState.first())
+    }
+
+    @Test
+    fun testDisconnectLifecycle() = runBlocking {
+        repository.initializeConnection("auth-valid-token")
+        repository.disconnect()
+        assertEquals(ConnectionState.DISCONNECTED, repository.connectionState.first())
+        assertNull(repository.currentSession.first())
     }
 
     @Test

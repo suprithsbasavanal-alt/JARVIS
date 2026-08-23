@@ -136,6 +136,33 @@ class TestPhase8AndroidBootstrap(unittest.TestCase):
         self.assertIn("jarvis.network.auth.challenge", transport_content)
         self.assertIn("jarvis.network.auth.verify", transport_content)
 
+    def test_phase8_3_connection_state_and_heartbeat_models(self) -> None:
+        """10. Verify Phase 8.3 ConnectionState enum, HeartbeatResult, and SessionGetResult models exist."""
+        ipc_client_content = (JAVA_SRC / "data" / "remote" / "JarvisIpcClient.kt").read_text(encoding="utf-8")
+        self.assertIn("enum class ConnectionState", ipc_client_content)
+        self.assertIn("DISCONNECTED", ipc_client_content)
+        self.assertIn("CONNECTING", ipc_client_content)
+        self.assertIn("AUTHENTICATING", ipc_client_content)
+        self.assertIn("CONNECTED", ipc_client_content)
+        self.assertIn("RECONNECTING", ipc_client_content)
+        self.assertIn("REVOKED", ipc_client_content)
+        self.assertIn("ERROR", ipc_client_content)
+
+        models_content = (JAVA_SRC / "data" / "model" / "JsonRpcModels.kt").read_text(encoding="utf-8")
+        self.assertIn("data class HeartbeatResult", models_content)
+        self.assertIn("data class SessionGetResult", models_content)
+        self.assertIn("class JsonRpcException", models_content)
+
+    def test_phase8_3_network_client_state_machine_and_backoff(self) -> None:
+        """11. Verify Phase 8.3 NetworkTransportClient implements state tracking, heartbeat, and backoff."""
+        transport_content = (JAVA_SRC / "data" / "remote" / "NetworkTransportClient.kt").read_text(encoding="utf-8")
+        self.assertIn("heartbeatJob", transport_content)
+        self.assertIn("reconnectJob", transport_content)
+        self.assertIn("isDeviceRevoked", transport_content)
+        self.assertIn("triggerReconnectLoop", transport_content)
+        self.assertIn("jarvis.heartbeat", transport_content)
+
 
 if __name__ == "__main__":
     unittest.main()
+

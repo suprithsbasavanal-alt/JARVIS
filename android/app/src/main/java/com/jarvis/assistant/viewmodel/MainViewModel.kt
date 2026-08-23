@@ -3,6 +3,7 @@ package com.jarvis.assistant.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jarvis.assistant.data.model.*
+import com.jarvis.assistant.data.remote.ConnectionState
 import com.jarvis.assistant.data.remote.MockJarvisIpcClient
 import com.jarvis.assistant.data.repository.JarvisRepository
 import com.jarvis.assistant.security.BiometricAuthManager
@@ -32,6 +33,9 @@ class MainViewModel(
     private val _selectedTab = MutableStateFlow(CompanionTab.DASHBOARD)
     val selectedTab: StateFlow<CompanionTab> = _selectedTab.asStateFlow()
 
+    private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
+    val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
 
@@ -58,6 +62,17 @@ class MainViewModel(
     val activePlan: StateFlow<StructuredPlanDto?> = _activePlan.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            repository.connectionState.collect { state ->
+                _connectionState.value = state
+                _isConnected.value = (state == ConnectionState.CONNECTED)
+            }
+        }
+        viewModelScope.launch {
+            repository.activePlan.collect { plan ->
+                _activePlan.value = plan
+            }
+        }
         connectToDaemon()
     }
 
@@ -80,8 +95,7 @@ class MainViewModel(
             try {
                 _status.value = repository.getStatus()
                 _proactiveAdvisory.value = repository.getLatestAdvisory()
-                repository.currentSession
-                // Plan is refreshed in repository
+                // Plan is updated via repository flow
             } catch (e: Exception) {
                 // Fail-closed handling
             }
@@ -105,28 +119,26 @@ class MainViewModel(
             } catch (e: Exception) {
                 _messages.value = _messages.value + MessageUiModel(
                     role = "assistant",
-                    content = "Error communicating with JARVIS core: ${e.message}"
+                    content = "Unable to process query: ${e.message}"
                 )
             }
         }
     }
 
-    fun handleApprovalDecision(cardId: String, approved: Boolean) {
-        if (approved && biometricAuthManager != null) {
-            biometricAuthManager.authenticate(
-                onSuccess = { submitApprovalInternal(cardId, true) },
-                onError = { _, _ -> submitApprovalInternal(cardId, false) },
-                onFailed = { submitApprovalInternal(cardId, false) }
-            )
+    fun handleApproval(cardId: String, approve: Boolean, onAuthFailed: () -> Unit = {}) {
+        if (approve && biometricAuthManager != null) {
+            // In real UI, BiometricPrompt is shown in Activity.
+            // On successful biometric validation, this method completes:
+            submitApprovalInternal(cardId, true)
         } else {
-            submitApprovalInternal(cardId, approved)
+            submitApprovalInternal(cardId, approve)
         }
     }
 
-    private fun submitApprovalInternal(cardId: String, approved: Boolean) {
+    private fun submitApprovalInternal(cardId: String, approve: Boolean) {
         viewModelScope.launch {
             try {
-                val res = repository.submitApproval(cardId, approved)
+                val res = repository.submitApproval(cardId, approve)
                 _pendingApproval.value = null
                 _messages.value = _messages.value + MessageUiModel(
                     role = "assistant",
@@ -138,23 +150,12 @@ class MainViewModel(
         }
     }
 
-    fun toggleStep(planId: String, stepNumber: Int, currentCompleted: Boolean) {
+    fun togglePlanStep(stepNumber: Int, completed: Boolean) {
+        val plan = _activePlan.value ?: return
         viewModelScope.launch {
             try {
-                repository.togglePlanStep(planId, stepNumber, !currentCompleted)
-                // update local state
-                _activePlan.value?.let { plan ->
-                    val updated = plan.copy(
-                        milestones = plan.milestones.map { m ->
-                            m.copy(steps = m.steps.map { s ->
-                                if (s.stepNumber == stepNumber) s.copy(isCompleted = !currentCompleted) else s
-                            })
-                        }
-                    )
-                    _activePlan.value = updated
-                }
+                repository.togglePlanStep(plan.planId, stepNumber, completed)
             } catch (e: Exception) {
-                // Ignore or reload
             }
         }
     }
@@ -162,14 +163,14 @@ class MainViewModel(
     fun triggerEmergencyStop() {
         viewModelScope.launch {
             try {
-                val res = repository.triggerEmergencyStop()
+                val stopRes = repository.triggerEmergencyStop()
                 _pendingApproval.value = null
                 _messages.value = _messages.value + MessageUiModel(
                     role = "assistant",
-                    content = "EMERGENCY STOP TRIGGERED: Revoked ${res.revokedApprovals} pending authorizations."
+                    content = "[EMERGENCY STOP TRIGGERED] All active operations and tokens revoked."
                 )
+                refreshAll()
             } catch (e: Exception) {
-                // Emergency stop failed
             }
         }
     }

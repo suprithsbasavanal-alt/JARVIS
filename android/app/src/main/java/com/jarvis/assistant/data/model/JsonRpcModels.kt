@@ -34,8 +34,17 @@ data class JsonRpcError(
     val data: JsonElement? = null
 )
 
+/**
+ * Typed Exception thrown when the server returns a JSON-RPC error.
+ */
+class JsonRpcException(
+    val code: Int,
+    override val message: String,
+    val data: JsonElement? = null
+) : Exception("JSON-RPC Error $code: $message")
+
 // ==========================================
-// DTOs for Phase 8.2 Device Pairing & Mutual Auth
+// DTOs for Phase 8.2 & 8.3 Device Pairing, Auth & Session
 // ==========================================
 
 @Serializable
@@ -98,6 +107,14 @@ data class DeviceRevokeParams(
     @SerialName("device_id") val deviceId: String
 )
 
+@Serializable
+data class HeartbeatResult(
+    val status: String,
+    val timestamp: String,
+    @SerialName("paired_devices") val pairedDevices: Int = 1,
+    @SerialName("active_sessions") val activeSessions: Int = 1
+)
+
 // ==========================================
 // DTOs for Core Subsystems
 // ==========================================
@@ -138,6 +155,13 @@ data class SessionCreateResult(
 )
 
 @Serializable
+data class SessionGetResult(
+    @SerialName("session_id") val sessionId: String,
+    @SerialName("user_display_name") val userDisplayName: String,
+    @SerialName("history_len") val historyLen: Int = 0
+)
+
+@Serializable
 data class TurnProcessParams(
     val query: String,
     @SerialName("session_id") val sessionId: String,
@@ -157,11 +181,13 @@ data class ApprovalCardDto(
     @SerialName("card_id") val cardId: String,
     @SerialName("tool_name") val toolName: String,
     @SerialName("risk_level") val riskLevel: String,
-    @SerialName("action_type") val actionType: String,
+    @SerialName("action_type") val actionType: String = "",
     @SerialName("target_resource") val targetResource: String,
     val parameters: JsonObject = JsonObject(emptyMap()),
-    @SerialName("reasoning_summary") val reasoningSummary: String,
-    @SerialName("expires_at") val expiresAt: String
+    @SerialName("reasoning_summary") val reasoningSummary: String = "",
+    @SerialName("risk_summary") val riskSummary: String = "",
+    @SerialName("expires_at") val expiresAt: String = "",
+    @SerialName("expires_at_epoch") val expiresAtEpoch: Double = 0.0
 )
 
 @Serializable
