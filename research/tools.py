@@ -222,3 +222,111 @@ class WebPageReaderTool(BaseTool):
                 is_success=False,
                 error_message=f"Web fetch blocked or failed: {err}",
             )
+
+
+class DocumentParserTool(BaseTool):
+    """Safe PDF and Markdown document parser with citation extraction and sandbox bounding."""
+
+    def __init__(self, engine: Any | None = None) -> None:
+        super().__init__(
+            ToolDefinition(
+                tool_id="document_parse",
+                name="document_parse",
+                description="Safely parses PDF and Markdown documents, extracting text and verifiable citations.",
+                version="1.0.0",
+                capability=ToolCapability.RESEARCH,
+                permission_tier=PermissionLevel.NORMAL,
+                risk_level=RiskLevel.LOW,
+                allowed_environment="SANDBOX_ONLY",
+                requires_confirmation=False,
+                side_effect_level=SideEffectLevel.READ,
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "file_path": {
+                            "type": "string",
+                            "description": "Relative or sandbox path to the document file (PDF or Markdown)",
+                        },
+                        "extract_citations": {
+                            "type": "boolean",
+                            "description": "Whether to extract granular section/page citations",
+                            "default": True,
+                        },
+                    },
+                    "required": ["file_path"],
+                    "additionalProperties": False,
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "file_path": {"type": "string"},
+                        "title": {"type": "string"},
+                        "document_type": {"type": "string"},
+                        "content_hash": {"type": "string"},
+                        "byte_size": {"type": "integer"},
+                        "page_or_section_count": {"type": "integer"},
+                        "full_text": {"type": "string"},
+                        "citations": {"type": "array"},
+                    },
+                    "required": [
+                        "file_path",
+                        "title",
+                        "document_type",
+                        "content_hash",
+                        "byte_size",
+                        "page_or_section_count",
+                        "full_text",
+                        "citations",
+                    ],
+                },
+            )
+        )
+        from research.document_engine import DocumentEngine
+        self.engine = engine or DocumentEngine()
+
+    async def execute(self, parameters: dict[str, Any], context: SessionContext) -> ToolResult:
+        allowed_keys = {"file_path", "extract_citations"}
+        if not set(parameters.keys()).issubset(allowed_keys):
+            unknown = set(parameters.keys()) - allowed_keys
+            raise UnknownParameterError(f"Unknown parameters for document parser: {unknown}")
+
+        raw_path = parameters.get("file_path")
+        if not raw_path or not isinstance(raw_path, str) or not raw_path.strip():
+            raise MalformedToolRequestError("Missing or invalid 'file_path' parameter.")
+
+        extract_citations = bool(parameters.get("extract_citations", True))
+        clean_path = raw_path.strip()
+
+        try:
+            doc = await self.engine.parse_document(
+                file_path=clean_path,
+                extract_citations=extract_citations,
+                allowed_dirs=context.active_whitelist_paths,
+            )
+
+            # Serialize citations cleanly
+            citations_data = [cite.model_dump() for cite in doc.citations]
+
+            return ToolResult(
+                tool_id=self.definition.tool_id,
+                tool_name=self.definition.name,
+                is_success=True,
+                output_data={
+                    "file_path": doc.source_uri,
+                    "title": doc.title,
+                    "document_type": doc.document_type,
+                    "content_hash": doc.content_hash,
+                    "byte_size": doc.byte_size,
+                    "page_or_section_count": doc.page_or_section_count,
+                    "full_text": doc.full_text,
+                    "citations": citations_data,
+                },
+            )
+        except Exception as err:
+            return ToolResult(
+                tool_id=self.definition.tool_id,
+                tool_name=self.definition.name,
+                is_success=False,
+                error_message=f"Document parsing failed: {err}",
+            )
+

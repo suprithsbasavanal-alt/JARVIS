@@ -187,3 +187,43 @@ class HTMLNormalizer:
 
         markdown_content = "\n".join(clean_lines).strip()
         return (title, markdown_content)
+
+
+class TextNormalizer:
+    """Sanitizes, normalizes, and decodes textual document contents."""
+
+    # Control characters to strip (exclude \t, \n, \r)
+    _CONTROL_CHAR_REGEX = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+    _HYPHEN_BREAK_REGEX = re.compile(r"(\w+)-\s*\n\s*(\w+)")
+
+    @classmethod
+    def normalize_text(cls, raw_text: str) -> str:
+        """Standardize unicode representation, strip control chars, and clean whitespace."""
+        if not raw_text or not isinstance(raw_text, str):
+            return ""
+
+        import unicodedata
+        # 1. Unicode NFKC Normalization
+        text = unicodedata.normalize("NFKC", raw_text)
+
+        # 2. Strip non-printable and dangerous control characters (e.g. null bytes)
+        text = cls._CONTROL_CHAR_REGEX.sub("", text)
+
+        # 3. Unescape any HTML entities present in text
+        text = unescape(text)
+
+        # 4. Resolve soft hyphenation across line wraps
+        text = cls._HYPHEN_BREAK_REGEX.sub(r"\1\2", text)
+
+        # 5. Clean up duplicate spacing and excessive blank lines
+        clean_lines: list[str] = []
+        for line in text.splitlines():
+            # Replace non-breaking spaces and collapse duplicate spaces
+            cleaned = " ".join(line.split())
+            if cleaned:
+                clean_lines.append(cleaned)
+            elif clean_lines and clean_lines[-1] != "":
+                clean_lines.append("")
+
+        return "\n".join(clean_lines).strip()
+

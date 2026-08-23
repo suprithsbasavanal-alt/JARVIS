@@ -13,7 +13,7 @@ This document establishes the official 14-phase development lifecycle for JARVIS
 | **Phase 1** | **Safe JARVIS Core** | Core runtime, event bus, context manager, state machine, basic chat loop | **COMPLETED & APPROVED** |
 | **Phase 2** | **Memory Subsystem** | Ephemeral context, encrypted SQLite/vector store, memory wipe/redact protocols | **COMPLETED (Hermetic tests pass 100%)** |
 | **Phase 3** | **Tool Framework** | Typed tool registry, capability enforcement, HITL confirmation gatekeeper | **COMPLETED & VERIFIED (28 Phase 3 tests pass 100%)** |
-| **Phase 4** | **Web & Research Engine** | Phase 4.1 (Foundation) & Phase 4.2 (Secure Search Engine) | **PHASE 4.1 & 4.2 COMPLETED (38 Phase 4 tests pass 100%)** |
+| **Phase 4** | **Web & Research Engine** | Web search, URL reader, PDF/Markdown parsing, citation engine, SSRF/injection shields | **COMPLETED & VERIFIED (56 Phase 4 tests pass 100%, 150 total tests)** |
 | **Phase 5** | **Voice Pipeline** | Offline wake-word ("Hey Jarvis"), local streaming STT, natural TTS synthesis | Zero continuous audio transmission to cloud; offline wake test pass |
 | **Phase 6** | **Proactive Intelligence** | Background ideation, task planning, project recommendations, polite disagreement | Proactivity bounded; zero unsolicited destructive action execution |
 | **Phase 7** | **macOS Desktop Agent** | Tauri v2 shell, native accessibility bridges, scoped filesystem sandbox | OS permission prompts scoped to explicit user directories |

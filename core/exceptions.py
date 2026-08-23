@@ -164,3 +164,33 @@ class WebFetchTimeoutError(ToolTimeoutError, WebResearchError):
     """Raised when a web request connection or read timeout expires."""
     pass
 
+
+# ==============================================================================
+# Phase 4 Document Research Exceptions
+# ==============================================================================
+
+class DocumentError(JarvisError):
+    """Base exception for document parsing and research operations."""
+    pass
+
+
+class DocumentParsingError(DocumentError):
+    """Raised when document content fails syntactic or structural parsing."""
+    pass
+
+
+class DocumentSizeExceededError(SecurityError, DocumentError):
+    """Raised when document file size or uncompressed stream exceeds maximum limit."""
+    pass
+
+
+class DocumentTimeoutError(ToolTimeoutError, DocumentError):
+    """Raised when document parsing operation exceeds timeout limit."""
+    pass
+
+
+class DocumentFormatError(DocumentError):
+    """Raised when unsupported or corrupted document format is encountered."""
+    pass
+
+

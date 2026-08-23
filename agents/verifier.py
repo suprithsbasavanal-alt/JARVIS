@@ -1,4 +1,4 @@
-"""Deterministic Tool Output Verifier and Content Isolator for Phase 3, Phase 4.1, and Phase 4.2."""
+"""Deterministic Tool Output Verifier and Content Isolator for Phase 3 and Phase 4."""
 
 import json
 from typing import Any
@@ -53,6 +53,19 @@ class OutputVerifier:
                 f"<untrusted_search_results query=\"{query_str}\" count=\"{count_int}\">\n"
                 f"{serialized}\n"
                 f"</untrusted_search_results>"
+            )
+
+        # Isolation tag for document parsing (PDF & Markdown)
+        if result.tool_name == "document_parse":
+            path_str = result.output_data.get("file_path", "unknown")
+            title_str = result.output_data.get("title", "Untitled Document")
+            hash_str = result.output_data.get("content_hash", "")[:16]
+            doc_type = result.output_data.get("document_type", "document")
+            text_str = result.output_data.get("full_text", "")
+            return (
+                f"<untrusted_document_content source=\"{path_str}\" title=\"{title_str}\" hash=\"{hash_str}\" type=\"{doc_type}\">\n"
+                f"{text_str}\n"
+                f"</untrusted_document_content>"
             )
 
         serialized = json.dumps(result.output_data, indent=2, default=str)

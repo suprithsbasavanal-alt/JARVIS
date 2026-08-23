@@ -19,6 +19,20 @@ This document records the foundational architectural decisions, trade-off analys
 - [ADR-009: Typed Tool Registry, Process-Isolated Execution Sandbox, and Cryptographic Approval Tokens](#adr-009-typed-tool-registry-process-isolated-execution-sandbox-and-cryptographic-approval-tokens)
 - [ADR-010: Secure Web Research Foundation, SSRF Defense, and Untrusted Web Content Isolation](#adr-010-secure-web-research-foundation-ssrf-defense-and-untrusted-web-content-isolation)
 - [ADR-011: Typed Search Provider Abstraction and Per-Result Security Filtering](#adr-011-typed-search-provider-abstraction-and-per-result-security-filtering)
+- [ADR-012: Secure Document Parsing (PDF/Markdown), Text Normalization, and Verifiable Citation Engine](#adr-012-secure-document-parsing-pdfmarkdown-text-normalization-and-verifiable-citation-engine)
+
+---
+
+### ADR-012: Secure Document Parsing (PDF/Markdown), Text Normalization, and Verifiable Citation Engine
+- **Status**: Accepted
+- **Context**: Document files (PDFs, Markdown) present major attack surfaces: decompression/zip bombs, embedded JavaScript action exploits (`/JS`, `/Launch`), malicious inline HTML, arbitrary path traversals outside the sandbox, and indirect prompt injection.
+- **Decision**: Implement a **Pure-Python Secure Document Parser Engine** with strict stream decompression limits (10 MB per stream, 50 MB total), active exploit neutralization, inline HTML sanitization, Unicode NFKC text normalization, **Verifiable Citation Tracking (`CitationManager`)** with SHA-256 fingerprinting, and **Untrusted XML Isolation Wrapping (`<untrusted_document_content>`)**.
+- **Rationale**:
+  1. Prevents remote code execution, memory exhaustion, and binary parser vulnerabilities by avoiding external C/C++ binary wrappers.
+  2. Guarantees non-repudiable factual citations anchored to specific pages, sections, and source document hashes.
+  3. Neutralizes indirect prompt injection attacks embedded inside user documents by encapsulating extracted text in inert XML data delimiters.
+- **Consequences**: Complex non-standard vector drawing operations or encrypted proprietary PDF formats require converting to standard formats prior to parsing.
+
 
 ---
 
